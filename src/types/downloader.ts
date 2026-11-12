@@ -1,4 +1,12 @@
-export type MediaFormat = 'mp3' | 'ogg' | 'aac' | 'flac' | 'wav' | 'mp4';
+export type MediaType = 'audio' | 'video';
+
+export type AudioFormat = 'mp3' | 'ogg' | 'aac' | 'flac' | 'wav';
+
+export type VideoFormat = 'mp4' | 'mkv' | 'webm';
+
+export type MediaFormat = AudioFormat | VideoFormat;
+
+export type VideoResolution = 'best' | '1080p' | '720p' | '480p';
 
 export type DownloadStatus =
   | 'queued'
@@ -28,12 +36,38 @@ export interface ProgressPayload {
   error: string | null;
 }
 
+export type ThemeMode = 'system' | 'dark' | 'light';
+
+export type AccentColor =
+  | 'vermilion'
+  | 'crimson'
+  | 'cobalt'
+  | 'emerald'
+  | 'amber'
+  | 'monochrome';
+
+export type UiDensity = 'compact' | 'comfortable' | 'spacious';
+
+export type CornerStyle = 'balanced' | 'sharp';
+
+export type FontScale = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+
 export interface AppSettings {
   outputDir: string;
   defaultFormat: MediaFormat;
+  defaultType: MediaType;
+  defaultAudioFormat: AudioFormat;
+  defaultVideoFormat: VideoFormat;
+  defaultVideoResolution: VideoResolution;
   embedThumbnail: boolean;
   darkMode: boolean;
   maxConcurrent: number;
+  themeMode: ThemeMode;
+  accentColor: AccentColor;
+  density: UiDensity;
+  cornerStyle: CornerStyle;
+  fontScale: FontScale;
+  showThumbnails: boolean;
 }
 
 export interface BinaryStatus {
@@ -59,6 +93,7 @@ export interface QueueItem {
   jobId: string;
   url: string;
   format: MediaFormat;
+  resolution?: VideoResolution;
   embedThumbnail: boolean;
   status: DownloadStatus;
   percent: number;

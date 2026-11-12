@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import {
+  ArrowDownToLine,
   CheckCircle2,
-  Download,
   ExternalLink,
   Terminal,
   X,
@@ -39,36 +39,36 @@ export const AboutModal: React.FC<AboutModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="about-modal-title"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] p-5 shadow-xl transition-all duration-200 dark:border-white/[0.08] dark:bg-[#1E293B] sm:p-6"
+        className="w-full max-w-xl overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border-strong)] bg-[var(--bg-panel)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#EC4899] to-[#DB2777] text-white shadow-sm">
-              <Download className="h-5 w-5" strokeWidth={2} />
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--border-hairline)] px-6 py-4">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] text-[var(--accent-text)]">
+              <ArrowDownToLine className="h-5 w-5" strokeWidth={1.75} />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-baseline gap-2.5">
                 <h2
                   id="about-modal-title"
-                  className="text-lg font-semibold tracking-[-0.02em] text-slate-900 dark:text-white"
+                  className="text-base font-semibold tracking-[-0.015em] text-[var(--text-primary)]"
                 >
                   YoutubeDownloader
                 </h2>
-                <span className="font-mono-tabular rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-0.5 text-xs font-medium text-[#64748B] dark:border-white/[0.08] dark:bg-[#0F172A] dark:text-[#94A3B8]">
+                <span className="font-mono-tabular text-xs font-medium text-[var(--text-muted)]">
                   v2.0.0
                 </span>
               </div>
-              <p className="mt-0.5 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                High-performance desktop audio &amp; video extractor powered by Tauri, Rust, and yt-dlp.
+              <p className="mt-0.5 text-[0.8125rem] text-[var(--text-secondary)]">
+                Desktop audio &amp; video extractor powered by Tauri, Rust, and yt-dlp.
               </p>
             </div>
           </div>
@@ -78,73 +78,74 @@ export const AboutModal: React.FC<AboutModalProps> = ({
             onClick={onClose}
             aria-label="Close about dialog"
             title="Close (Esc)"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#E2E8F0] bg-transparent text-[#94A3B8] transition-colors duration-150 hover:bg-[#F8FAFC] hover:text-slate-900 cursor-pointer dark:border-white/[0.08] dark:hover:bg-[#0F172A] dark:hover:text-white"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-transparent text-[var(--text-muted)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
           >
-            <X className="h-4 w-4" strokeWidth={2} />
+            <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
         </div>
 
-        {/* Metadata Grid */}
-        <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3.5 text-xs dark:border-white/[0.08] dark:bg-[#0F172A]">
-          <div>
-            <span className="block text-[11px] font-medium uppercase tracking-wider text-[#94A3B8]">
+        {/* Spec Grid */}
+        <div className="grid grid-cols-2 divide-x divide-[var(--border-hairline)] border-b border-[var(--border-hairline)] bg-[var(--bg-canvas)] text-[0.8125rem]">
+          <div className="px-6 py-3.5">
+            <span className="block text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--text-muted)]">
               Author
             </span>
-            <span className="mt-1 block font-medium text-slate-900 dark:text-slate-100">
+            <span className="mt-1 block font-medium text-[var(--text-primary)]">
               Supawish35
             </span>
           </div>
-          <div>
-            <span className="block text-[11px] font-medium uppercase tracking-wider text-[#94A3B8]">
+          <div className="px-6 py-3.5">
+            <span className="block text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--text-muted)]">
               License
             </span>
-            <span className="font-mono-tabular mt-1 block font-medium text-slate-900 dark:text-slate-100">
+            <span className="font-mono-tabular mt-1 block font-medium text-[var(--text-primary)]">
               GPL-3.0
             </span>
           </div>
-          <div className="col-span-2 border-t border-[#E2E8F0] pt-2.5 dark:border-white/[0.08]">
-            <span className="block text-[11px] font-medium uppercase tracking-wider text-[#94A3B8]">
-              Repository
-            </span>
-            <button
-              type="button"
-              onClick={() => onOpenExternalUrl(GITHUB_REPO_URL)}
-              className="mt-1 inline-flex items-center gap-1.5 font-medium text-[#2563EB] transition-colors hover:underline cursor-pointer dark:text-blue-400"
-            >
-              <span>{GITHUB_REPO_URL}</span>
-              <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
-          </div>
         </div>
 
-        {/* Binary Diagnostics */}
-        <div className="mt-4 space-y-2.5">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-            <Terminal className="h-3.5 w-3.5 text-[#EC4899]" strokeWidth={2} />
+        <div className="border-b border-[var(--border-hairline)] bg-[var(--bg-canvas)] px-6 py-3.5 text-[0.8125rem]">
+          <span className="block text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+            Repository
+          </span>
+          <button
+            type="button"
+            onClick={() => onOpenExternalUrl(GITHUB_REPO_URL)}
+            className="font-mono-tabular mt-1 inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] text-xs font-medium text-[var(--accent-text)] transition-colors hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] cursor-pointer"
+          >
+            <span>{GITHUB_REPO_URL}</span>
+            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+          </button>
+        </div>
+
+        {/* Runtime Diagnostics */}
+        <div className="px-6 py-4">
+          <div className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            <Terminal className="h-4 w-4 text-[var(--accent-text)]" strokeWidth={1.75} />
             <span>Runtime Binaries</span>
           </div>
 
-          <div className="space-y-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3.5 text-xs dark:border-white/[0.08] dark:bg-[#0F172A]">
+          <div className="divide-y divide-[var(--border-hairline)] rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] text-[0.8125rem]">
             {/* yt-dlp */}
-            <div className="space-y-1">
+            <div className="space-y-1 px-4 py-3">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100">
+                <div className="flex items-center gap-2 font-medium text-[var(--text-primary)]">
                   {binaryStatus?.ytDlpPath ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-[#10B981]" strokeWidth={2} />
+                    <CheckCircle2 className="h-4 w-4 text-[var(--status-ok)]" strokeWidth={1.75} />
                   ) : (
-                    <XCircle className="h-3.5 w-3.5 text-[#DC2626]" strokeWidth={2} />
+                    <XCircle className="h-4 w-4 text-[var(--status-err)]" strokeWidth={1.75} />
                   )}
-                  <span>yt-dlp</span>
-                  <span className="rounded bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-[#94A3B8]">
+                  <span className="font-mono-tabular">yt-dlp</span>
+                  <span className="font-mono-tabular rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] text-[var(--text-muted)]">
                     {binaryStatus?.ytDlpSource ?? 'unknown'}
                   </span>
                 </div>
-                <span className="font-mono-tabular text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+                <span className="font-mono-tabular text-xs text-[var(--text-secondary)]">
                   {binaryStatus?.ytDlpVersion ?? 'Not installed'}
                 </span>
               </div>
               <p
-                className="font-mono-tabular truncate text-[11px] text-[#94A3B8]"
+                className="font-mono-tabular truncate text-xs text-[var(--text-muted)]"
                 title={binaryStatus?.ytDlpPath ?? undefined}
               >
                 {binaryStatus?.ytDlpPath ?? 'No binary path detected'}
@@ -152,22 +153,22 @@ export const AboutModal: React.FC<AboutModalProps> = ({
             </div>
 
             {/* ffmpeg */}
-            <div className="space-y-1 border-t border-[#E2E8F0] pt-2.5 dark:border-white/[0.08]">
+            <div className="space-y-1 px-4 py-3">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100">
+                <div className="flex items-center gap-2 font-medium text-[var(--text-primary)]">
                   {binaryStatus?.ffmpegAvailable ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-[#10B981]" strokeWidth={2} />
+                    <CheckCircle2 className="h-4 w-4 text-[var(--status-ok)]" strokeWidth={1.75} />
                   ) : (
-                    <XCircle className="h-3.5 w-3.5 text-[#F59E0B]" strokeWidth={2} />
+                    <XCircle className="h-4 w-4 text-[var(--status-warn)]" strokeWidth={1.75} />
                   )}
-                  <span>ffmpeg</span>
+                  <span className="font-mono-tabular">ffmpeg</span>
                 </div>
-                <span className="font-mono-tabular max-w-[240px] truncate text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+                <span className="font-mono-tabular max-w-[16rem] truncate text-xs text-[var(--text-secondary)]">
                   {binaryStatus?.ffmpegVersion ?? 'Not found on PATH'}
                 </span>
               </div>
               <p
-                className="font-mono-tabular truncate text-[11px] text-[#94A3B8]"
+                className="font-mono-tabular truncate text-xs text-[var(--text-muted)]"
                 title={binaryStatus?.ffmpegPath ?? undefined}
               >
                 {binaryStatus?.ffmpegPath ?? 'Install ffmpeg to enable audio conversion & muxing'}
@@ -177,11 +178,11 @@ export const AboutModal: React.FC<AboutModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="mt-5 flex justify-end">
+        <div className="flex justify-end border-t border-[var(--border-hairline)] bg-[var(--bg-canvas)] px-6 py-3.5">
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-9 items-center justify-center rounded-lg bg-[#EC4899] px-4 text-xs font-medium text-white transition-colors duration-150 hover:bg-[#DB2777] cursor-pointer"
+            className="inline-flex h-9 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent)] px-5 text-[0.8125rem] font-medium text-[var(--accent-fg)] transition-colors duration-150 hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] cursor-pointer"
           >
             Close
           </button>

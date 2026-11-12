@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "YoutubeDownloader",
-        "width": 860,
-        "height": 660,
-        "minWidth": 680,
-        "minHeight": 520,
+        "width": 1040,
+        "height": 760,
+        "minWidth": 740,
+        "minHeight": 560,
         "resizable": true
       }
     ],

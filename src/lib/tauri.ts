@@ -9,16 +9,28 @@ import type {
   ProgressPayload,
   UpdateCheckResult,
   VideoMetadata,
+  VideoResolution,
 } from '~types/downloader';
+import { getMediaTypeForFormat, isAudioFormat, isVideoFormat } from '@/lib/mediaFormats';
 
 const PREVIEW_SETTINGS_KEY = 'ytd_preview_settings';
 
 const DEFAULT_PREVIEW_SETTINGS: AppSettings = {
   outputDir: '~/Downloads',
   defaultFormat: 'mp3',
+  defaultType: 'audio',
+  defaultAudioFormat: 'mp3',
+  defaultVideoFormat: 'mp4',
+  defaultVideoResolution: 'best',
   embedThumbnail: true,
   darkMode: true,
   maxConcurrent: 3,
+  themeMode: 'dark',
+  accentColor: 'vermilion',
+  density: 'comfortable',
+  cornerStyle: 'balanced',
+  fontScale: 'md',
+  showThumbnails: true,
 };
 
 let previewBinaryState: BinaryStatus = {
@@ -43,7 +55,23 @@ function loadPreviewSettings(): AppSettings {
   try {
     const raw = window.localStorage.getItem(PREVIEW_SETTINGS_KEY);
     if (raw) {
-      return { ...DEFAULT_PREVIEW_SETTINGS, ...(JSON.parse(raw) as Partial<AppSettings>) };
+      const parsed = JSON.parse(raw) as Partial<AppSettings> | null;
+      if (parsed && typeof parsed === 'object') {
+        const sanitized = Object.fromEntries(
+          Object.entries(parsed).filter(([, value]) => value !== undefined && value !== null)
+        ) as Partial<AppSettings>;
+        const merged = { ...DEFAULT_PREVIEW_SETTINGS, ...sanitized };
+        if (!parsed.defaultType) {
+          merged.defaultType = getMediaTypeForFormat(merged.defaultFormat);
+        }
+        if (!parsed.defaultAudioFormat && isAudioFormat(merged.defaultFormat)) {
+          merged.defaultAudioFormat = merged.defaultFormat;
+        }
+        if (!parsed.defaultVideoFormat && isVideoFormat(merged.defaultFormat)) {
+          merged.defaultVideoFormat = merged.defaultFormat;
+        }
+        return merged;
+      }
     }
   } catch {
     // Ignore storage errors in preview mode
@@ -173,6 +201,7 @@ export interface StartDownloadParams {
   jobId: string;
   url: string;
   format: MediaFormat;
+  resolution?: VideoResolution;
   embedThumbnail?: boolean;
   outputDir?: string;
 }
@@ -253,6 +282,7 @@ export async function startDownload(params: StartDownloadParams): Promise<void> 
     jobId: params.jobId,
     url: params.url,
     format: params.format,
+    resolution: params.resolution,
     embedThumbnail: params.embedThumbnail,
     outputDir: params.outputDir,
   });

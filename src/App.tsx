@@ -2,10 +2,12 @@ import React, { lazy, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   ExternalLink,
   FolderOpen,
   Info,
-  Terminal,
+  Loader2,
+  RefreshCw,
   X,
   XCircle,
 } from 'lucide-react';
@@ -29,17 +31,21 @@ import {
   updateYtDlp,
   validateUrl,
 } from '@/lib/tauri';
+import { isVideoFormat, supportsCoverArt } from '@/lib/mediaFormats';
 import type {
   AppSettings,
   BinaryStatus,
   MediaFormat,
+  MediaType,
   QueueFilter,
   QueueItem,
   UpdateCheckResult,
+  VideoResolution,
 } from '~types/downloader';
 
 const QueueList = lazy(() => import('~components/QueueList'));
 const AboutModal = lazy(() => import('~components/AboutModal'));
+const SettingsModal = lazy(() => import('~components/SettingsModal'));
 
 interface ToastNotification {
   id: string;
@@ -52,9 +58,19 @@ interface ToastNotification {
 const DEFAULT_SETTINGS: AppSettings = {
   outputDir: '',
   defaultFormat: 'mp3',
+  defaultType: 'audio',
+  defaultAudioFormat: 'mp3',
+  defaultVideoFormat: 'mp4',
+  defaultVideoResolution: 'best',
   embedThumbnail: true,
   darkMode: true,
   maxConcurrent: 3,
+  themeMode: 'dark',
+  accentColor: 'vermilion',
+  density: 'comfortable',
+  cornerStyle: 'balanced',
+  fontScale: 'md',
+  showThumbnails: true,
 };
 
 function generateJobId(): string {
@@ -86,9 +102,16 @@ export const App: React.FC = () => {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<QueueFilter>('all');
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [toast, setToast] = useState<ToastNotification | null>(null);
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return true;
+  });
 
   const toastTimerRef = useRef<number | null>(null);
   const settingsRef = useRef<AppSettings>(settings);
@@ -118,15 +141,59 @@ export const App: React.FC = () => {
     []
   );
 
-  // Sync dark mode class on <html>
+  // Listen for OS color-scheme changes when themeMode === 'system'
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const updateMatch = () => setSystemPrefersDark(media.matches);
+    updateMatch();
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', updateMatch);
+      return () => media.removeEventListener('change', updateMatch);
+    }
+    media.addListener(updateMatch);
+    return () => media.removeListener(updateMatch);
+  }, []);
+
+  const effectiveDarkMode =
+    settings.themeMode === 'system'
+      ? systemPrefersDark
+      : settings.themeMode === 'dark';
+
+  // Sync appearance tokens and dark mode class on <html>
   useEffect(() => {
     const root = document.documentElement;
-    if (settings.darkMode) {
+    if (effectiveDarkMode) {
       root.classList.add('dark');
     } else {
       root.classList.remove('dark');
     }
-  }, [settings.darkMode]);
+    root.dataset.accent = settings.accentColor;
+    root.dataset.density = settings.density;
+    root.dataset.corners = settings.cornerStyle;
+    root.dataset.scale = settings.fontScale;
+  }, [
+    effectiveDarkMode,
+    settings.accentColor,
+    settings.density,
+    settings.cornerStyle,
+    settings.fontScale,
+  ]);
+
+  // Global Ctrl+, / Cmd+, shortcut to toggle Settings modal
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === ',') {
+        e.preventDefault();
+        setSettingsOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   // Initial load: settings, binaries (with auto-provision if yt-dlp missing), and event listeners
   useEffect(() => {
@@ -138,7 +205,7 @@ export const App: React.FC = () => {
       try {
         const loadedSettings = await getSettings();
         if (active) {
-          setSettings(loadedSettings);
+          setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings });
           setSettingsLoaded(true);
         }
       } catch (err) {
@@ -237,9 +304,42 @@ export const App: React.FC = () => {
     [settingsLoaded, showToast]
   );
 
+  const handleTypeChange = useCallback(
+    (defaultType: MediaType) => {
+      void updateAndPersistSettings((prev) => ({
+        ...prev,
+        defaultType,
+        defaultFormat:
+          defaultType === 'video' ? prev.defaultVideoFormat : prev.defaultAudioFormat,
+      }));
+    },
+    [updateAndPersistSettings]
+  );
+
   const handleFormatChange = useCallback(
     (format: MediaFormat) => {
-      void updateAndPersistSettings((prev) => ({ ...prev, defaultFormat: format }));
+      void updateAndPersistSettings((prev) =>
+        isVideoFormat(format)
+          ? {
+              ...prev,
+              defaultType: 'video',
+              defaultVideoFormat: format,
+              defaultFormat: format,
+            }
+          : {
+              ...prev,
+              defaultType: 'audio',
+              defaultAudioFormat: format,
+              defaultFormat: format,
+            }
+      );
+    },
+    [updateAndPersistSettings]
+  );
+
+  const handleResolutionChange = useCallback(
+    (defaultVideoResolution: VideoResolution) => {
+      void updateAndPersistSettings((prev) => ({ ...prev, defaultVideoResolution }));
     },
     [updateAndPersistSettings]
   );
@@ -252,8 +352,50 @@ export const App: React.FC = () => {
   );
 
   const handleToggleDarkMode = useCallback(() => {
-    void updateAndPersistSettings((prev) => ({ ...prev, darkMode: !prev.darkMode }));
-  }, [updateAndPersistSettings]);
+    void updateAndPersistSettings((prev) => {
+      const currentDark =
+        prev.themeMode === 'system'
+          ? systemPrefersDark
+          : prev.themeMode === 'dark';
+      const nextDark = !currentDark;
+      return {
+        ...prev,
+        darkMode: nextDark,
+        themeMode: nextDark ? 'dark' : 'light',
+      };
+    });
+  }, [systemPrefersDark, updateAndPersistSettings]);
+
+  const handleUpdateSettings = useCallback(
+    (updater: (prev: AppSettings) => AppSettings) => {
+      void updateAndPersistSettings((prev) => {
+        const next = updater(prev);
+        if (next.themeMode !== prev.themeMode) {
+          const nextDark =
+            next.themeMode === 'system'
+              ? systemPrefersDark
+              : next.themeMode === 'dark';
+          return { ...next, darkMode: nextDark };
+        }
+        return next;
+      });
+    },
+    [systemPrefersDark, updateAndPersistSettings]
+  );
+
+  const handleResetAppearanceDefaults = useCallback(() => {
+    void updateAndPersistSettings((prev) => ({
+      ...prev,
+      darkMode: DEFAULT_SETTINGS.darkMode,
+      themeMode: DEFAULT_SETTINGS.themeMode,
+      accentColor: DEFAULT_SETTINGS.accentColor,
+      density: DEFAULT_SETTINGS.density,
+      cornerStyle: DEFAULT_SETTINGS.cornerStyle,
+      fontScale: DEFAULT_SETTINGS.fontScale,
+      showThumbnails: DEFAULT_SETTINGS.showThumbnails,
+    }));
+    showToast('info', 'Appearance settings reset to defaults.');
+  }, [showToast, updateAndPersistSettings]);
 
   const handleChangeOutputDir = useCallback(async () => {
     try {
@@ -339,12 +481,23 @@ export const App: React.FC = () => {
         const validatedUrl = await validateUrl(rawUrl);
         const currentSettings = settingsRef.current;
         const jobId = generateJobId();
+        const activeFormat =
+          currentSettings.defaultType === 'video'
+            ? currentSettings.defaultVideoFormat
+            : currentSettings.defaultAudioFormat;
+        const activeResolution =
+          currentSettings.defaultType === 'video'
+            ? currentSettings.defaultVideoResolution
+            : undefined;
+        const effectiveEmbedThumbnail =
+          currentSettings.embedThumbnail && supportsCoverArt(activeFormat);
 
         const newItem: QueueItem = {
           jobId,
           url: validatedUrl,
-          format: currentSettings.defaultFormat,
-          embedThumbnail: currentSettings.embedThumbnail,
+          format: activeFormat,
+          resolution: activeResolution,
+          embedThumbnail: effectiveEmbedThumbnail,
           status: 'queued',
           percent: 0,
           speed: null,
@@ -374,8 +527,9 @@ export const App: React.FC = () => {
           await startDownload({
             jobId,
             url: validatedUrl,
-            format: currentSettings.defaultFormat,
-            embedThumbnail: currentSettings.embedThumbnail,
+            format: activeFormat,
+            resolution: activeResolution,
+            embedThumbnail: effectiveEmbedThumbnail,
             outputDir: currentSettings.outputDir || undefined,
           });
         } else {
@@ -409,6 +563,7 @@ export const App: React.FC = () => {
           jobId: target.jobId,
           url: target.url,
           format: target.format,
+          resolution: target.resolution,
           embedThumbnail: target.embedThumbnail,
           outputDir: settingsRef.current.outputDir || undefined,
         });
@@ -523,6 +678,8 @@ export const App: React.FC = () => {
   }, [queue]);
 
   const ytDlpReady = Boolean(binaryStatus?.ytDlpPath);
+  const ffmpegAvailable = Boolean(binaryStatus?.ffmpegAvailable);
+  const hasBinaryWarning = Boolean(binaryStatus && (!ytDlpReady || !ffmpegAvailable));
   const activeCount = queue.filter(
     (item) =>
       item.status === 'fetchingMeta' ||
@@ -531,72 +688,29 @@ export const App: React.FC = () => {
   ).length;
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900 transition-colors duration-200 dark:bg-[#0F172A] dark:text-[#F8FAFC]">
+    <div className="flex h-screen min-h-[520px] flex-col overflow-hidden bg-[var(--bg-canvas)] text-[var(--text-primary)]">
       <Header
-        binaryStatus={binaryStatus}
-        isProvisioningBinaries={isProvisioningBinaries}
-        onProvisionOrUpdateBinaries={() => void handleProvisionOrUpdateBinaries()}
         isCheckingUpdate={isCheckingUpdate}
         updateInfo={updateInfo}
         onCheckUpdate={() => void handleCheckUpdate()}
         onOpenReleaseUrl={(url) => void handleOpenExternalUrl(url)}
-        darkMode={settings.darkMode}
+        darkMode={effectiveDarkMode}
         onToggleDarkMode={handleToggleDarkMode}
+        onOpenSettings={() => setSettingsOpen(true)}
         onOpenAbout={() => setAboutOpen(true)}
+        hasBinaryWarning={hasBinaryWarning}
       />
 
-      {/* Toast Notification Banner */}
-      {toast && (
-        <div className="mx-auto mt-3 w-full max-w-5xl px-4 sm:px-6">
-          <div
-            role="status"
-            className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-xs font-medium shadow-sm ${
-              toast.type === 'success'
-                ? 'border-[#10B981]/30 bg-[#10B981]/10 text-[#10B981]'
-                : toast.type === 'warning'
-                  ? 'border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]'
-                  : toast.type === 'error'
-                    ? 'border-[#DC2626]/30 bg-[#DC2626]/10 text-[#DC2626]'
-                    : 'border-[#2563EB]/30 bg-[#2563EB]/10 text-[#2563EB] dark:text-blue-400'
-            }`}
-          >
-            <div className="flex min-w-0 items-center gap-2">
-              {toast.type === 'success' && <CheckCircle2 className="h-4 w-4 shrink-0" />}
-              {toast.type === 'warning' && <AlertTriangle className="h-4 w-4 shrink-0" />}
-              {toast.type === 'error' && <XCircle className="h-4 w-4 shrink-0" />}
-              {toast.type === 'info' && <Info className="h-4 w-4 shrink-0" />}
-              <span className="truncate">{toast.message}</span>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              {toast.actionUrl && toast.actionLabel && (
-                <button
-                  type="button"
-                  onClick={() => void handleOpenExternalUrl(toast.actionUrl!)}
-                  className="inline-flex items-center gap-1 rounded-md bg-current/10 px-2.5 py-1 font-semibold underline-offset-2 hover:underline cursor-pointer"
-                >
-                  <span>{toast.actionLabel}</span>
-                  <ExternalLink className="h-3 w-3" />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setToast(null)}
-                aria-label="Dismiss notification"
-                className="rounded-md p-1 opacity-75 transition-opacity hover:opacity-100 cursor-pointer"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Workspace */}
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 px-4 py-5 sm:px-6">
+      {/* Edge-to-Edge Workbench Body */}
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <ControlPanel
-          selectedFormat={settings.defaultFormat}
+          selectedType={settings.defaultType}
+          onTypeChange={handleTypeChange}
+          selectedAudioFormat={settings.defaultAudioFormat}
+          selectedVideoFormat={settings.defaultVideoFormat}
           onFormatChange={handleFormatChange}
+          selectedResolution={settings.defaultVideoResolution}
+          onResolutionChange={handleResolutionChange}
           embedThumbnail={settings.embedThumbnail}
           onEmbedThumbnailChange={handleEmbedThumbnailChange}
           outputDir={settings.outputDir}
@@ -622,40 +736,158 @@ export const App: React.FC = () => {
             onClearCompleted={handleClearCompleted}
             onClearAll={() => void handleClearAll()}
             binaryReady={ytDlpReady}
+            showThumbnails={settings.showThumbnails}
           />
         </SuspenseLoader>
       </main>
 
-      {/* Bottom Utility Bar */}
-      <footer className="border-t border-[#E2E8F0] bg-[#FFFFFF]/80 px-4 py-2.5 text-xs text-[#64748B] backdrop-blur-sm dark:border-white/[0.08] dark:bg-[#1E293B]/60 dark:text-[#94A3B8] sm:px-6">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-1.5">
-              <Terminal className="h-3.5 w-3.5 text-[#EC4899]" strokeWidth={1.75} />
-              <span className="font-mono-tabular">
-                yt-dlp: {binaryStatus?.ytDlpVersion ?? (isProvisioningBinaries ? 'installing...' : 'missing')}
+      {/* Unified Bottom Telemetry Bar */}
+      <footer className="shrink-0 border-t border-[var(--border-hairline)] bg-[var(--bg-panel)] px-5 py-2 text-xs text-[var(--text-muted)] sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex flex-wrap items-center gap-3.5">
+            {/* yt-dlp Status + Update/Install */}
+            <div className="inline-flex items-center gap-2">
+              {isProvisioningBinaries ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--status-warn)]" strokeWidth={2} />
+              ) : (
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    ytDlpReady ? 'bg-[var(--status-ok)]' : 'bg-[var(--status-err)]'
+                  }`}
+                  aria-hidden="true"
+                />
+              )}
+              <span className="font-mono-tabular text-[var(--text-secondary)]">
+                yt-dlp{' '}
+                {isProvisioningBinaries
+                  ? 'installing...'
+                  : binaryStatus?.ytDlpVersion ?? 'missing'}
               </span>
-            </span>
-            <span className="opacity-40">|</span>
-            <span className="font-mono-tabular">
-              ffmpeg: {binaryStatus?.ffmpegAvailable ? 'available' : 'missing'}
-            </span>
-            <span className="opacity-40">|</span>
-            <span className="font-mono-tabular">
-              Active jobs: {activeCount}/{settings.maxConcurrent}
+              {!isProvisioningBinaries && (
+                <button
+                  type="button"
+                  onClick={() => void handleProvisionOrUpdateBinaries()}
+                  title={ytDlpReady ? 'Update yt-dlp binary' : 'Install yt-dlp binary'}
+                  aria-label={ytDlpReady ? 'Update yt-dlp binary' : 'Install yt-dlp binary'}
+                  className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-2 py-0.5 text-[0.6875rem] font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+                >
+                  {ytDlpReady ? (
+                    <>
+                      <RefreshCw className="h-3 w-3" strokeWidth={1.75} />
+                      <span>Update</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-3 w-3 text-[var(--status-err)]" strokeWidth={1.75} />
+                      <span className="text-[var(--status-err)]">Install</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            <span className="h-3.5 w-px bg-[var(--border-hairline)]" aria-hidden="true" />
+
+            {/* ffmpeg Status */}
+            <div
+              className="inline-flex items-center gap-2"
+              title={
+                ffmpegAvailable
+                  ? binaryStatus?.ffmpegPath ?? 'ffmpeg available'
+                  : 'ffmpeg not found on PATH — audio conversion may fail'
+              }
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  ffmpegAvailable ? 'bg-[var(--status-ok)]' : 'bg-[var(--status-warn)]'
+                }`}
+                aria-hidden="true"
+              />
+              <span className="font-mono-tabular text-[var(--text-secondary)]">
+                ffmpeg {ffmpegAvailable ? 'ready' : 'missing'}
+              </span>
+            </div>
+
+            <span className="h-3.5 w-px bg-[var(--border-hairline)]" aria-hidden="true" />
+
+            {/* Active Concurrency */}
+            <span className="font-mono-tabular text-[var(--text-muted)]">
+              jobs{' '}
+              <span className={activeCount > 0 ? 'text-[var(--accent-text)] font-medium' : ''}>
+                {activeCount}
+              </span>
+              /{settings.maxConcurrent}
             </span>
           </div>
 
           <button
             type="button"
             onClick={() => void handleOpenOutputDir()}
-            className="inline-flex items-center gap-1.5 font-medium text-slate-700 transition-colors hover:text-[#EC4899] cursor-pointer dark:text-slate-200 dark:hover:text-[#EC4899]"
+            className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-0.5 font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
           >
             <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.75} />
-            <span>Open Storage Folder</span>
+            <span>Open Folder</span>
           </button>
         </div>
       </footer>
+
+      {/* Floating Bottom-Right Toast */}
+      {toast && (
+        <div
+          role="status"
+          className="fixed right-4 bottom-12 z-40 flex max-w-md items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--border-strong)] bg-[var(--bg-panel)] px-4 py-3 text-[0.8125rem] font-medium text-[var(--text-primary)] shadow-lg"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            {toast.type === 'success' && (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--status-ok)]" strokeWidth={1.75} />
+            )}
+            {toast.type === 'warning' && (
+              <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--status-warn)]" strokeWidth={1.75} />
+            )}
+            {toast.type === 'error' && (
+              <XCircle className="h-4 w-4 shrink-0 text-[var(--status-err)]" strokeWidth={1.75} />
+            )}
+            {toast.type === 'info' && (
+              <Info className="h-4 w-4 shrink-0 text-[var(--accent-text)]" strokeWidth={1.75} />
+            )}
+            <span className="truncate">{toast.message}</span>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            {toast.actionUrl && toast.actionLabel && (
+              <button
+                type="button"
+                onClick={() => void handleOpenExternalUrl(toast.actionUrl!)}
+                className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-2.5 py-0.5 text-xs font-medium text-[var(--accent-text)] transition-colors hover:border-[var(--border-strong)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+              >
+                <span>{toast.actionLabel}</span>
+                <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              aria-label="Dismiss notification"
+              className="rounded-[var(--radius-sm)] p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+            >
+              <X className="h-4 w-4" strokeWidth={1.75} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {settingsOpen && (
+        <SuspenseLoader fallback={null}>
+          <SettingsModal
+            isOpen={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            onResetDefaults={handleResetAppearanceDefaults}
+            onChangeOutputDir={() => void handleChangeOutputDir()}
+          />
+        </SuspenseLoader>
+      )}
 
       {aboutOpen && (
         <SuspenseLoader fallback={null}>

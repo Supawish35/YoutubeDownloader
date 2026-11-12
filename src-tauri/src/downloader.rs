@@ -4,7 +4,9 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{watch, Mutex, Semaphore};
 
-use crate::models::{DownloadStatus, MediaFormat, ProgressPayload, VideoMetadata};
+use crate::models::{
+    DownloadStatus, MediaFormat, ProgressPayload, VideoMetadata, VideoResolution,
+};
 
 pub fn validate_youtube_url(url: &str) -> Result<String, String> {
     let trimmed = url.trim();
@@ -37,9 +39,37 @@ pub fn validate_youtube_url(url: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+fn build_video_selector(format: &MediaFormat, resolution: VideoResolution) -> (String, &'static str) {
+    let h = resolution
+        .max_height()
+        .map(|px| format!("[height<={px}]"))
+        .unwrap_or_default();
+
+    match format {
+        MediaFormat::Mp4 => (
+            format!(
+                "bestvideo{h}[ext=mp4]+bestaudio[ext=m4a]/bestvideo{h}+bestaudio/best{h}[ext=mp4]/best{h}/best"
+            ),
+            "mp4",
+        ),
+        MediaFormat::Mkv => (
+            format!("bestvideo{h}+bestaudio/best{h}/best"),
+            "mkv",
+        ),
+        MediaFormat::Webm => (
+            format!(
+                "bestvideo{h}[ext=webm]+bestaudio[ext=webm]/bestvideo{h}[vcodec^=vp9]+bestaudio[acodec^=opus]/best{h}[ext=webm]/best{h}/best"
+            ),
+            "webm",
+        ),
+        _ => (format!("bestvideo{h}+bestaudio/best"), "mp4"),
+    }
+}
+
 pub fn build_yt_dlp_args(
     url: &str,
     format: &MediaFormat,
+    resolution: VideoResolution,
     embed_thumbnail: bool,
     output_dir: &str,
     ffmpeg_path: Option<&str>,
@@ -66,14 +96,15 @@ pub fn build_yt_dlp_args(
         args.push(format.yt_dlp_audio_format().to_string());
         args.push("--audio-quality".to_string());
         args.push("0".to_string());
-    } else if *format == MediaFormat::Mp4 {
+    } else {
+        let (selector, container) = build_video_selector(format, resolution);
         args.push("-f".to_string());
-        args.push("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best".to_string());
+        args.push(selector);
         args.push("--merge-output-format".to_string());
-        args.push("mp4".to_string());
+        args.push(container.to_string());
     }
 
-    if embed_thumbnail {
+    if embed_thumbnail && format.supports_cover_art() {
         args.push("--embed-thumbnail".to_string());
         args.push("--convert-thumbnails".to_string());
         args.push("jpg".to_string());
@@ -189,6 +220,7 @@ impl DownloadManager {
         job_id: String,
         url: String,
         format: MediaFormat,
+        resolution: VideoResolution,
         embed_thumbnail: bool,
         output_dir: String,
         yt_dlp_bin: String,
@@ -252,6 +284,7 @@ impl DownloadManager {
             let args = build_yt_dlp_args(
                 &url,
                 &format,
+                resolution,
                 embed_thumbnail,
                 &output_dir,
                 ffmpeg_path.as_deref(),
@@ -471,7 +504,14 @@ mod tests {
         ];
 
         for (format, expected_audio_fmt) in formats {
-            let args = build_yt_dlp_args(url, &format, true, out_dir, ffmpeg);
+            let args = build_yt_dlp_args(
+                url,
+                &format,
+                VideoResolution::Best,
+                true,
+                out_dir,
+                ffmpeg,
+            );
             assert!(args.contains(&"--no-playlist".to_string()));
             assert!(args.contains(&"--newline".to_string()));
             assert!(args.contains(&"--embed-metadata".to_string()));
@@ -482,30 +522,60 @@ mod tests {
             assert!(args.contains(&expected_audio_fmt.to_string()));
             assert!(args.contains(&"--audio-quality".to_string()));
             assert!(args.contains(&"0".to_string()));
-            assert!(args.contains(&"--embed-thumbnail".to_string()));
-            assert!(args.contains(&"--convert-thumbnails".to_string()));
-            assert!(args.contains(&"jpg".to_string()));
+            if format.supports_cover_art() {
+                assert!(args.contains(&"--embed-thumbnail".to_string()));
+                assert!(args.contains(&"--convert-thumbnails".to_string()));
+                assert!(args.contains(&"jpg".to_string()));
+            } else {
+                assert!(!args.contains(&"--embed-thumbnail".to_string()));
+            }
             assert_eq!(args.last().unwrap(), url);
         }
     }
 
     #[test]
-    fn test_build_yt_dlp_args_video_mp4() {
+    fn test_build_yt_dlp_args_video_containers_and_resolutions() {
         let url = "https://www.youtube.com/watch?v=test";
         let out_dir = "/home/user/downloads";
 
-        let args = build_yt_dlp_args(url, &MediaFormat::Mp4, false, out_dir, None);
-        assert!(!args.contains(&"-x".to_string()));
-        assert!(!args.contains(&"--embed-thumbnail".to_string()));
-        assert!(args.contains(&"-f".to_string()));
-        assert!(args.contains(
-            &"bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best".to_string()
-        ));
-        assert!(args.contains(&"--merge-output-format".to_string()));
-        assert!(args.contains(&"mp4".to_string()));
-        assert!(args.contains(&"-o".to_string()));
-        assert!(args.contains(&"/home/user/downloads/%(title).150B [%(id)s].%(ext)s".to_string()));
-        assert_eq!(args.last().unwrap(), url);
+        let mp4_best = build_yt_dlp_args(
+            url,
+            &MediaFormat::Mp4,
+            VideoResolution::Best,
+            true,
+            out_dir,
+            None,
+        );
+        assert!(!mp4_best.contains(&"-x".to_string()));
+        // Cover art should be skipped on video formats even when embed_thumbnail is true
+        assert!(!mp4_best.contains(&"--embed-thumbnail".to_string()));
+        assert!(mp4_best.contains(&"--merge-output-format".to_string()));
+        assert!(mp4_best.contains(&"mp4".to_string()));
+        assert!(mp4_best.contains(&"/home/user/downloads/%(title).150B [%(id)s].%(ext)s".to_string()));
+        assert_eq!(mp4_best.last().unwrap(), url);
+
+        let mkv_1080 = build_yt_dlp_args(
+            url,
+            &MediaFormat::Mkv,
+            VideoResolution::P1080,
+            false,
+            out_dir,
+            None,
+        );
+        assert!(mkv_1080.contains(&"bestvideo[height<=1080]+bestaudio/best[height<=1080]/best".to_string()));
+        assert!(mkv_1080.contains(&"mkv".to_string()));
+
+        let webm_720 = build_yt_dlp_args(
+            url,
+            &MediaFormat::Webm,
+            VideoResolution::P720,
+            false,
+            out_dir,
+            None,
+        );
+        let selector_idx = webm_720.iter().position(|a| a == "-f").unwrap() + 1;
+        assert!(webm_720[selector_idx].contains("[height<=720][ext=webm]"));
+        assert!(webm_720.contains(&"webm".to_string()));
     }
 
     #[test]

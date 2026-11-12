@@ -13,11 +13,29 @@ import {
   Video,
   X,
 } from 'lucide-react';
-import type { MediaFormat } from '~types/downloader';
+import PrecisionSelect from '~components/PrecisionSelect';
+import {
+  AUDIO_FORMAT_OPTIONS,
+  supportsCoverArt,
+  VIDEO_FORMAT_OPTIONS,
+  VIDEO_RESOLUTION_OPTIONS,
+} from '@/lib/mediaFormats';
+import type {
+  AudioFormat,
+  MediaFormat,
+  MediaType,
+  VideoFormat,
+  VideoResolution,
+} from '~types/downloader';
 
 export interface ControlPanelProps {
-  selectedFormat: MediaFormat;
+  selectedType: MediaType;
+  onTypeChange: (type: MediaType) => void;
+  selectedAudioFormat: AudioFormat;
+  selectedVideoFormat: VideoFormat;
   onFormatChange: (format: MediaFormat) => void;
+  selectedResolution: VideoResolution;
+  onResolutionChange: (resolution: VideoResolution) => void;
   embedThumbnail: boolean;
   onEmbedThumbnailChange: (enabled: boolean) => void;
   outputDir: string;
@@ -29,18 +47,14 @@ export interface ControlPanelProps {
   binaryReady: boolean;
 }
 
-const FORMAT_OPTIONS: { value: MediaFormat; label: string; isVideo?: boolean }[] = [
-  { value: 'mp3', label: '.MP3' },
-  { value: 'ogg', label: '.OGG' },
-  { value: 'aac', label: '.AAC' },
-  { value: 'flac', label: '.FLAC' },
-  { value: 'wav', label: '.WAV' },
-  { value: 'mp4', label: '.MP4', isVideo: true },
-];
-
 export const ControlPanel: React.FC<ControlPanelProps> = ({
-  selectedFormat,
+  selectedType,
+  onTypeChange,
+  selectedAudioFormat,
+  selectedVideoFormat,
   onFormatChange,
+  selectedResolution,
+  onResolutionChange,
   embedThumbnail,
   onEmbedThumbnailChange,
   outputDir,
@@ -116,7 +130,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     if (!isValid) {
       if (!urlInput.trim()) {
         setValidationState('invalid');
-        setValidationError('Please paste a YouTube URL first.');
+        setValidationError('Paste a YouTube URL first.');
       }
       return;
     }
@@ -137,7 +151,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     if (!isValid) {
       if (!urlInput.trim()) {
         setValidationState('invalid');
-        setValidationError('Please paste a YouTube URL first.');
+        setValidationError('Paste a YouTube URL first.');
       }
       return;
     }
@@ -155,54 +169,92 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      void handleDownloadSingle();
+      if (e.shiftKey) {
+        void handleAddToQueue();
+      } else {
+        void handleDownloadSingle();
+      }
     }
   };
 
   const inputBorderClass =
     validationState === 'invalid'
-      ? 'border-[#DC2626] focus-within:ring-2 focus-within:ring-[#DC2626]/30'
+      ? 'border-[var(--status-err)] focus-within:ring-1 focus-within:ring-[var(--status-err)]'
       : validationState === 'valid'
-        ? 'border-[#10B981]/60 focus-within:ring-2 focus-within:ring-[#10B981]/30'
-        : 'border-[#CBD5E1] focus-within:border-[#EC4899] focus-within:ring-2 focus-within:ring-[#EC4899]/25 dark:border-white/[0.12] dark:focus-within:border-[#EC4899]';
+        ? 'border-[var(--status-ok)]/70 focus-within:ring-1 focus-within:ring-[var(--status-ok)]'
+        : 'border-[var(--border-hairline)] focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-subtle)]';
+
+  const isVideoMode = selectedType === 'video';
+  const activeFormat: MediaFormat = isVideoMode ? selectedVideoFormat : selectedAudioFormat;
+  const coverArtSupported = !isVideoMode && supportsCoverArt(activeFormat);
+  const coverArtTitle = isVideoMode
+    ? 'Cover art embedding is skipped in Video mode'
+    : !coverArtSupported
+      ? 'WAV container does not support embedded cover art'
+      : 'Embed video thumbnail as cover art (--embed-thumbnail)';
+
+  const renderTypeButton = (
+    type: MediaType,
+    label: string,
+    Icon: React.FC<{ className?: string; strokeWidth?: number }>
+  ) => {
+    const isActive = selectedType === type;
+    return (
+      <button
+        key={type}
+        type="button"
+        role="radio"
+        aria-checked={isActive}
+        onClick={() => onTypeChange(type)}
+        className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-3 text-xs font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer ${
+          isActive
+            ? 'bg-[var(--accent)] text-[var(--accent-fg)]'
+            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+        }`}
+      >
+        <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+        <span>{label}</span>
+      </button>
+    );
+  };
 
   return (
     <section
       aria-label="Download controls"
-      className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] p-4 shadow-sm transition-colors duration-200 dark:border-white/[0.08] dark:bg-[#1E293B] sm:p-5"
+      className="shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-panel)] px-5 py-4 sm:px-6"
     >
-      {/* URL Ingestion Row */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+      {/* Row 1: URL Intake + Primary Actions */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div
-          className={`flex h-12 flex-1 items-center gap-2 rounded-xl border bg-[#F8FAFC] px-3.5 transition-all duration-150 dark:bg-[#0F172A] ${inputBorderClass}`}
+          className={`flex h-11 flex-1 items-center gap-2.5 rounded-[var(--radius-md)] border bg-[var(--bg-inset)] px-3.5 transition-colors duration-150 ${inputBorderClass}`}
         >
           <Link2
             className={`h-4 w-4 shrink-0 ${
               validationState === 'valid'
-                ? 'text-[#10B981]'
+                ? 'text-[var(--status-ok)]'
                 : validationState === 'invalid'
-                  ? 'text-[#DC2626]'
-                  : 'text-[#94A3B8]'
+                  ? 'text-[var(--status-err)]'
+                  : 'text-[var(--text-muted)]'
             }`}
-            strokeWidth={1.75}
+            strokeWidth={1.5}
           />
           <input
             type="url"
             value={urlInput}
             onChange={(e) => handleUrlChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Paste a YouTube video, Shorts, or Music URL..."
+            placeholder="Paste YouTube video, Shorts, or Music URL (Enter to download)..."
             aria-label="YouTube URL"
             aria-invalid={validationState === 'invalid'}
-            className="w-full bg-transparent text-sm text-slate-900 placeholder:text-[#94A3B8] focus:outline-none dark:text-slate-100"
+            className="w-full bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
           />
 
           {validationState === 'valid' && (
             <span
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#10B981]/15 text-[#10B981]"
+              className="flex h-5 w-5 shrink-0 items-center justify-center text-[var(--status-ok)]"
               title="Valid YouTube URL"
             >
-              <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+              <Check className="h-4 w-4" strokeWidth={2.25} />
             </span>
           )}
 
@@ -212,7 +264,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               onClick={handleClear}
               title="Clear URL"
               aria-label="Clear URL"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#94A3B8] transition-colors duration-150 hover:bg-slate-200/70 hover:text-slate-700 cursor-pointer dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
             >
               <X className="h-4 w-4" strokeWidth={1.75} />
             </button>
@@ -223,156 +275,166 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             onClick={() => void handlePaste()}
             title="Paste URL from clipboard"
             aria-label="Paste URL from clipboard"
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-2.5 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 cursor-pointer dark:border-white/[0.08] dark:bg-[#1E293B] dark:text-slate-200 dark:hover:bg-slate-700/70"
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2.5 text-xs font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
           >
-            <ClipboardPaste className="h-3.5 w-3.5 text-[#94A3B8]" strokeWidth={1.75} />
-            <span className="hidden sm:inline">Paste</span>
+            <ClipboardPaste className="h-3.5 w-3.5 text-[var(--text-muted)]" strokeWidth={1.5} />
+            <span>Paste</span>
           </button>
         </div>
 
         {/* Action CTAs */}
-        <div className="flex shrink-0 items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => void handleDownloadSingle()}
             disabled={isSubmitting || !binaryReady}
             title={
               binaryReady
-                ? 'Validate, add to queue, and start download immediately'
+                ? 'Validate, add to queue, and start download immediately (Enter)'
                 : 'Install yt-dlp first to start downloads'
             }
-            className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-[#EC4899] px-5 text-sm font-medium text-white shadow-sm transition-all duration-150 hover:bg-[#DB2777] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer lg:flex-initial"
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--accent)] px-5 text-sm font-medium text-[var(--accent-fg)] transition-colors duration-150 hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] cursor-pointer sm:flex-initial"
           >
-            <Download className="h-4 w-4" strokeWidth={2} />
-            <span>Download Single</span>
+            <Download className="h-4 w-4" strokeWidth={1.75} />
+            <span>Download</span>
           </button>
 
           <button
             type="button"
             onClick={() => void handleAddToQueue()}
             disabled={isSubmitting}
-            title="Add URL to queue without starting immediately"
-            className="inline-flex h-12 items-center justify-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-transparent px-4 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer dark:border-white/[0.08] dark:text-slate-200 dark:hover:bg-[#0F172A]"
+            title="Add URL to queue without starting immediately (Shift+Enter)"
+            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-transparent px-4 text-sm font-medium text-[var(--text-primary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] cursor-pointer"
           >
-            <Plus className="h-4 w-4" strokeWidth={2} />
-            <span>Add to Queue</span>
+            <Plus className="h-4 w-4 text-[var(--text-secondary)]" strokeWidth={1.75} />
+            <span>Queue</span>
           </button>
         </div>
       </div>
 
-      {/* Inline Validation Message */}
+      {/* Inline Validation Error */}
       {validationState === 'invalid' && validationError && (
         <div
           role="alert"
-          className="mt-2.5 flex items-center gap-1.5 text-xs font-medium text-[#DC2626]"
+          className="mt-2.5 flex items-center gap-1.5 text-[0.8125rem] font-medium text-[var(--status-err)]"
         >
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+          <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.75} />
           <span>{validationError}</span>
         </div>
       )}
 
-      {/* Format Pills + Embed Thumbnail Toggle */}
-      <div className="mt-4 flex flex-col gap-3 border-t border-[#E2E8F0] pt-4 dark:border-white/[0.08] sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-xs font-medium uppercase tracking-wider text-[#94A3B8]">
-            Format
-          </span>
-          {FORMAT_OPTIONS.map((opt) => {
-            const isActive = selectedFormat === opt.value;
-            const activeClass = opt.isVideo
-              ? 'bg-[#2563EB] text-white border-transparent shadow-sm'
-              : 'bg-[#EC4899] text-white border-transparent shadow-sm';
-            const inactiveClass =
-              'border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B] hover:text-slate-900 hover:bg-slate-100 dark:border-white/[0.08] dark:bg-[#0F172A] dark:text-[#94A3B8] dark:hover:text-white dark:hover:bg-slate-800';
+      {/* Row 2: Media Type Switch + Extension/Quality Popovers + Cover Art + Output Folder */}
+      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Audio / Video Type Switch */}
+          <div
+            role="radiogroup"
+            aria-label="Download type"
+            className="inline-flex h-9 items-center gap-0.5 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] p-0.5"
+          >
+            {renderTypeButton('audio', 'Audio', Music)}
+            {renderTypeButton('video', 'Video', Video)}
+          </div>
 
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => onFormatChange(opt.value)}
-                aria-pressed={isActive}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all duration-150 cursor-pointer ${
-                  isActive ? activeClass : inactiveClass
-                }`}
-              >
-                {opt.isVideo ? (
-                  <Video className="h-3.5 w-3.5" strokeWidth={1.75} />
-                ) : (
-                  <Music className="h-3.5 w-3.5" strokeWidth={1.75} />
-                )}
-                <span>{opt.label}</span>
-              </button>
-            );
-          })}
-        </div>
+          {/* Contextual Extension Dropdown */}
+          {isVideoMode ? (
+            <PrecisionSelect<VideoFormat>
+              value={selectedVideoFormat}
+              options={VIDEO_FORMAT_OPTIONS}
+              onChange={(fmt) => onFormatChange(fmt)}
+              prefix="Ext"
+              ariaLabel="Video file extension"
+              menuClassName="min-w-[16rem]"
+            />
+          ) : (
+            <PrecisionSelect<AudioFormat>
+              value={selectedAudioFormat}
+              options={AUDIO_FORMAT_OPTIONS}
+              onChange={(fmt) => onFormatChange(fmt)}
+              prefix="Ext"
+              ariaLabel="Audio file extension"
+              menuClassName="min-w-[16rem]"
+            />
+          )}
 
-        {/* Embed Thumbnail Toggle Switch */}
-        <div className="flex items-center justify-between gap-3 sm:justify-end">
+          {/* Video Resolution Dropdown (Video mode only) */}
+          {isVideoMode && (
+            <PrecisionSelect<VideoResolution>
+              value={selectedResolution}
+              options={VIDEO_RESOLUTION_OPTIONS}
+              onChange={onResolutionChange}
+              prefix="Res"
+              ariaLabel="Video maximum resolution"
+              menuClassName="min-w-[15rem]"
+            />
+          )}
+
+          {/* Embed Cover Art Switch (enabled for supported Audio formats) */}
           <button
             type="button"
             role="switch"
-            aria-checked={embedThumbnail}
+            aria-checked={coverArtSupported ? embedThumbnail : false}
+            aria-disabled={!coverArtSupported}
+            disabled={!coverArtSupported}
             onClick={() => onEmbedThumbnailChange(!embedThumbnail)}
-            className="group inline-flex items-center gap-2.5 rounded-lg px-2 py-1 text-left transition-colors duration-150 hover:bg-[#F8FAFC] cursor-pointer dark:hover:bg-[#0F172A]"
-            title="Embed video thumbnail as cover art (--embed-thumbnail --convert-thumbnails jpg)"
+            title={coverArtTitle}
+            className={`inline-flex h-9 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-transparent px-3 text-[0.8125rem] font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] ${
+              coverArtSupported
+                ? 'text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] cursor-pointer'
+                : 'text-[var(--text-muted)] opacity-45 cursor-not-allowed'
+            }`}
           >
             <ImageIcon
               className={`h-4 w-4 transition-colors ${
-                embedThumbnail ? 'text-[#EC4899]' : 'text-[#94A3B8]'
+                coverArtSupported && embedThumbnail
+                  ? 'text-[var(--accent-text)]'
+                  : 'text-[var(--text-muted)]'
               }`}
-              strokeWidth={1.75}
+              strokeWidth={1.5}
             />
-            <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
-              Embed Thumbnail
-            </span>
+            <span>Cover Art</span>
             <span
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
-                embedThumbnail
-                  ? 'bg-[#EC4899]'
-                  : 'bg-slate-300 dark:bg-slate-700'
+              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-150 ${
+                coverArtSupported && embedThumbnail
+                  ? 'bg-[var(--accent)]'
+                  : 'bg-[var(--border-strong)]'
               }`}
             >
               <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                  embedThumbnail ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                className={`inline-block h-3 w-3 transform rounded-full transition-transform duration-150 ${
+                  coverArtSupported && embedThumbnail
+                    ? 'translate-x-[0.875rem] bg-[var(--accent-fg)]'
+                    : 'translate-x-[0.125rem] bg-white'
                 }`}
               />
             </span>
           </button>
         </div>
-      </div>
 
-      {/* Output Directory Bar */}
-      <div className="mt-3 flex flex-col gap-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 py-2.5 dark:border-white/[0.08] dark:bg-[#0F172A] sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="shrink-0 text-xs font-medium text-[#94A3B8]">
-            Save to:
+        {/* Inline Output Folder Strip */}
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="hidden text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] md:inline">
+            Dest
           </span>
-          <span
-            className="font-mono-tabular truncate text-xs font-medium text-slate-700 dark:text-slate-200"
-            title={outputDir}
-          >
-            {outputDir || 'Default Downloads folder'}
-          </span>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={onChangeOutputDir}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-3 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 cursor-pointer dark:border-white/[0.08] dark:bg-[#1E293B] dark:text-slate-200 dark:hover:bg-slate-700/70"
+            title={`Output directory: ${outputDir || 'Default Downloads folder'} — click to change`}
+            className="inline-flex h-9 max-w-[16rem] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-3 text-xs text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer sm:max-w-[20rem]"
           >
-            <FolderSearch className="h-3.5 w-3.5 text-[#2563EB]" strokeWidth={1.75} />
-            <span>Change Folder</span>
+            <FolderSearch className="h-4 w-4 shrink-0 text-[var(--text-muted)]" strokeWidth={1.5} />
+            <span className="font-mono-tabular truncate">
+              {outputDir || 'Default Downloads'}
+            </span>
           </button>
-
           <button
             type="button"
             onClick={onOpenOutputDir}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-3 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 cursor-pointer dark:border-white/[0.08] dark:bg-[#1E293B] dark:text-slate-200 dark:hover:bg-slate-700/70"
+            title="Open output folder"
+            aria-label="Open output folder"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-transparent text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
           >
-            <FolderOpen className="h-3.5 w-3.5 text-[#94A3B8]" strokeWidth={1.75} />
-            <span>Open Folder</span>
+            <FolderOpen className="h-4 w-4" strokeWidth={1.5} />
           </button>
         </div>
       </div>

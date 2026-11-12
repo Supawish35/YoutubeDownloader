@@ -3,39 +3,253 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-
-  --color-canvas-dark: #0F172A;
-  --color-surface-dark: #1E293B;
-  --color-canvas-light: #F8FAFC;
-  --color-surface-light: #FFFFFF;
-  --color-accent-rose: #EC4899;
-  --color-accent-berry: #DB2777;
-  --color-accent-cobalt: #2563EB;
-  --color-signal-emerald: #10B981;
-  --color-signal-amber: #F59E0B;
-  --color-signal-crimson: #DC2626;
-  --color-muted-slate: #94A3B8;
 }
 
 @layer base {
+  /* Light mode surfaces, status, and default appearance tokens */
+  :root {
+    --bg-canvas: #F4F3EF;
+    --bg-panel: #FFFFFF;
+    --bg-elevated: #FAFAF8;
+    --bg-inset: #EAE8E2;
+    --bg-hover: rgba(20, 20, 22, 0.04);
+    --border-hairline: #DEDCD5;
+    --border-strong: #C2BFB5;
+    --text-primary: #141416;
+    --text-secondary: #52525B;
+    --text-muted: #676770;
+    --status-ok: #16A34A;
+    --status-warn: #D97706;
+    --status-err: #DC2626;
+    --ring-focus: var(--accent);
+
+    /* Default Accent: Vermilion (Light) */
+    --accent: #EA580C;
+    --accent-hover: #C2410C;
+    --accent-fg: #FFFFFF;
+    --accent-text: #C2410C;
+    --accent-subtle: rgba(234, 88, 12, 0.10);
+
+    /* Default Corner Geometry: Balanced */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+
+    /* Default Density: Comfortable */
+    --row-py: 0.75rem;
+    --thumb-w: 6rem;
+    --thumb-h: 3.375rem;
+
+    /* Default Type Scale: Medium (105%) */
+    --text-scale: 1.05;
+  }
+
+  /* Dark mode surfaces, status, and default Vermilion overrides */
+  html.dark {
+    --bg-canvas: #111113;
+    --bg-panel: #18181B;
+    --bg-elevated: #202024;
+    --bg-inset: #0B0B0D;
+    --bg-hover: rgba(255, 255, 255, 0.04);
+    --border-hairline: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.17);
+    --text-primary: #F4F4F5;
+    --text-secondary: #A1A1AA;
+    --text-muted: #86868F;
+    --status-ok: #22C55E;
+    --status-warn: #F59E0B;
+    --status-err: #EF4444;
+
+    /* Default Accent: Vermilion (Dark) */
+    --accent: #EA580C;
+    --accent-hover: #C2410C;
+    --accent-fg: #FFFFFF;
+    --accent-text: #FB923C;
+    --accent-subtle: rgba(234, 88, 12, 0.12);
+  }
+
+  /* =========================================================================
+     Accent Presets (html[data-accent="..."])
+     ========================================================================= */
+  html[data-accent="vermilion"] {
+    --accent: #EA580C;
+    --accent-hover: #C2410C;
+    --accent-fg: #FFFFFF;
+    --accent-text: #C2410C;
+    --accent-subtle: rgba(234, 88, 12, 0.10);
+  }
+
+  html.dark[data-accent="vermilion"] {
+    --accent: #EA580C;
+    --accent-hover: #C2410C;
+    --accent-fg: #FFFFFF;
+    --accent-text: #FB923C;
+    --accent-subtle: rgba(234, 88, 12, 0.12);
+  }
+
+  html[data-accent="crimson"] {
+    --accent: #DC2626;
+    --accent-hover: #B91C1C;
+    --accent-fg: #FFFFFF;
+    --accent-text: #B91C1C;
+    --accent-subtle: rgba(220, 38, 38, 0.10);
+  }
+
+  html.dark[data-accent="crimson"] {
+    --accent: #DC2626;
+    --accent-hover: #B91C1C;
+    --accent-fg: #FFFFFF;
+    --accent-text: #F87171;
+    --accent-subtle: rgba(220, 38, 38, 0.12);
+  }
+
+  html[data-accent="cobalt"] {
+    --accent: #2563EB;
+    --accent-hover: #1D4ED8;
+    --accent-fg: #FFFFFF;
+    --accent-text: #1D4ED8;
+    --accent-subtle: rgba(37, 99, 235, 0.10);
+  }
+
+  html.dark[data-accent="cobalt"] {
+    --accent: #2563EB;
+    --accent-hover: #1D4ED8;
+    --accent-fg: #FFFFFF;
+    --accent-text: #60A5FA;
+    --accent-subtle: rgba(37, 99, 235, 0.12);
+  }
+
+  html[data-accent="emerald"] {
+    --accent: #16A34A;
+    --accent-hover: #15803D;
+    --accent-fg: #FFFFFF;
+    --accent-text: #15803D;
+    --accent-subtle: rgba(22, 163, 74, 0.10);
+  }
+
+  html.dark[data-accent="emerald"] {
+    --accent: #16A34A;
+    --accent-hover: #15803D;
+    --accent-fg: #FFFFFF;
+    --accent-text: #4ADE80;
+    --accent-subtle: rgba(22, 163, 74, 0.12);
+  }
+
+  html[data-accent="amber"] {
+    --accent: #D97706;
+    --accent-hover: #B45309;
+    --accent-fg: #FFFFFF;
+    --accent-text: #B45309;
+    --accent-subtle: rgba(217, 119, 6, 0.10);
+  }
+
+  html.dark[data-accent="amber"] {
+    --accent: #D97706;
+    --accent-hover: #B45309;
+    --accent-fg: #FFFFFF;
+    --accent-text: #FBBF24;
+    --accent-subtle: rgba(217, 119, 6, 0.12);
+  }
+
+  html[data-accent="monochrome"] {
+    --accent: #18181B;
+    --accent-hover: #27272A;
+    --accent-fg: #FFFFFF;
+    --accent-text: #141416;
+    --accent-subtle: rgba(24, 24, 27, 0.10);
+  }
+
+  html.dark[data-accent="monochrome"] {
+    --accent: #F4F4F5;
+    --accent-hover: #E4E4E7;
+    --accent-fg: #111113;
+    --accent-text: #F4F4F5;
+    --accent-subtle: rgba(244, 244, 245, 0.11);
+  }
+
+  /* =========================================================================
+     Corner Geometry (html[data-corners="balanced" | "sharp"])
+     ========================================================================= */
+  html[data-corners="balanced"] {
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+  }
+
+  html[data-corners="sharp"] {
+    --radius-sm: 2px;
+    --radius-md: 2px;
+    --radius-lg: 3px;
+  }
+
+  /* =========================================================================
+     Density (html[data-density="compact" | "comfortable" | "spacious"])
+     ========================================================================= */
+  html[data-density="compact"] {
+    --row-py: 0.45rem;
+    --thumb-w: 4.5rem;
+    --thumb-h: 2.5rem;
+  }
+
+  html[data-density="comfortable"] {
+    --row-py: 0.75rem;
+    --thumb-w: 6rem;
+    --thumb-h: 3.375rem;
+  }
+
+  html[data-density="spacious"] {
+    --row-py: 1.05rem;
+    --thumb-w: 7.5rem;
+    --thumb-h: 4.25rem;
+  }
+
+  /* =========================================================================
+     UI Scale (html[data-scale="xs" | "sm" | "md" | "lg" | "xl"])
+     ========================================================================= */
   html {
     font-family: var(--font-sans);
+    font-size: 17px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  body {
-    background-color: #F8FAFC;
-    color: #0F172A;
-    transition: background-color 200ms cubic-bezier(0.4, 0, 0.2, 1),
-      color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  html[data-scale="xs"] {
+    --text-scale: 0.85;
+    font-size: 13.5px;
   }
 
-  html.dark body {
-    background-color: #0F172A;
-    color: #F8FAFC;
+  html[data-scale="sm"] {
+    --text-scale: 0.95;
+    font-size: 15px;
+  }
+
+  html[data-scale="md"] {
+    --text-scale: 1.05;
+    font-size: 17px;
+  }
+
+  html[data-scale="lg"] {
+    --text-scale: 1.2;
+    font-size: 19px;
+  }
+
+  html[data-scale="xl"] {
+    --text-scale: 1.35;
+    font-size: 21.5px;
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    transition: background-color 150ms cubic-bezier(0.2, 0, 0, 1),
+      color 150ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  ::selection {
+    background-color: var(--accent);
+    color: var(--accent-fg);
   }
 
   .font-mono-tabular {
@@ -44,10 +258,20 @@
   }
 }
 
-/* Custom sleek desktop scrollbar */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Crisp minimal desktop scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -55,18 +279,18 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.35);
-  border-radius: 9999px;
+  background: rgba(113, 113, 122, 0.35);
+  border-radius: var(--radius-sm);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.55);
+  background: rgba(113, 113, 122, 0.55);
 }
 
 html.dark ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.25);
+  background: rgba(161, 161, 170, 0.22);
 }
 
 html.dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.45);
+  background: rgba(161, 161, 170, 0.4);
 }

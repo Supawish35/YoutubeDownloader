@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import {
-  AlertCircle,
-  CheckCircle2,
   FolderOpen,
-  Image as ImageIcon,
   Loader2,
   Music,
   Play,
@@ -12,10 +9,12 @@ import {
   Trash2,
   Video,
 } from 'lucide-react';
+import { getFormatOption, isVideoFormat, supportsCoverArt } from '@/lib/mediaFormats';
 import type { QueueItem } from '~types/downloader';
 
 export interface QueueItemCardProps {
   item: QueueItem;
+  showThumbnails?: boolean;
   onStart: (jobId: string) => void;
   onCancel: (jobId: string) => void;
   onRetry: (jobId: string) => void;
@@ -38,6 +37,7 @@ function formatDuration(seconds: number | null): string | null {
 
 export const QueueItemCard: React.FC<QueueItemCardProps> = ({
   item,
+  showThumbnails = true,
   onStart,
   onCancel,
   onRetry,
@@ -46,7 +46,9 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
 }) => {
   const [thumbFailed, setThumbFailed] = useState(false);
 
-  const isVideo = item.format === 'mp4';
+  const isVideo = isVideoFormat(item.format);
+  const formatBadge = getFormatOption(item.format).badge;
+  const showCoverArtBadge = item.embedThumbnail && supportsCoverArt(item.format);
   const isActive =
     item.status === 'fetchingMeta' ||
     item.status === 'downloading' ||
@@ -56,57 +58,55 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
   const titleText = item.metadata?.title || item.url;
   const channelText =
     item.metadata?.channel ||
-    (item.status === 'fetchingMeta' ? 'Fetching video details...' : 'YouTube Media');
+    (item.status === 'fetchingMeta' ? 'Resolving video details...' : 'YouTube Media');
 
   const clampedPercent = Math.min(100, Math.max(0, item.percent));
 
-  const renderStatusBadge = () => {
+  const renderStatusLabel = () => {
     switch (item.status) {
       case 'queued':
         return (
-          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-[#94A3B8]">
-            Queued
+          <span className="font-mono-tabular text-xs text-[var(--text-muted)]">
+            QUEUED
           </span>
         );
       case 'fetchingMeta':
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-[#F59E0B]/15 px-2 py-0.5 text-[11px] font-medium text-[#F59E0B]">
-            <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} />
-            <span>Fetching info</span>
+          <span className="font-mono-tabular inline-flex items-center gap-1 text-xs text-[var(--status-warn)]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
+            <span>META</span>
           </span>
         );
       case 'downloading':
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-[#2563EB]/15 px-2 py-0.5 text-[11px] font-medium text-[#2563EB] dark:text-blue-400">
-            <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} />
-            <span>Downloading</span>
+          <span className="font-mono-tabular inline-flex items-center justify-end gap-1 text-xs font-medium text-[var(--accent-text)]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
+            <span>DL</span>
           </span>
         );
       case 'converting':
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-[#F59E0B]/15 px-2 py-0.5 text-[11px] font-medium text-[#F59E0B]">
-            <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} />
-            <span>Converting</span>
+          <span className="font-mono-tabular inline-flex items-center gap-1 text-xs text-[var(--status-warn)]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
+            <span>MUX</span>
           </span>
         );
       case 'completed':
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-[#10B981]/15 px-2 py-0.5 text-[11px] font-medium text-[#10B981]">
-            <CheckCircle2 className="h-3 w-3" strokeWidth={2} />
-            <span>Completed</span>
+          <span className="font-mono-tabular text-xs font-medium text-[var(--status-ok)]">
+            DONE
           </span>
         );
       case 'failed':
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-[#DC2626]/15 px-2 py-0.5 text-[11px] font-medium text-[#DC2626]">
-            <AlertCircle className="h-3 w-3" strokeWidth={2} />
-            <span>Failed</span>
+          <span className="font-mono-tabular text-xs font-medium text-[var(--status-err)]">
+            ERR
           </span>
         );
       case 'cancelled':
         return (
-          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-[#94A3B8] dark:bg-slate-800">
-            Cancelled
+          <span className="font-mono-tabular text-xs text-[var(--text-muted)]">
+            STOPPED
           </span>
         );
     }
@@ -116,7 +116,7 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
     if (item.status === 'completed') {
       return (
         <div
-          className="h-full rounded-full bg-[#10B981] transition-all duration-300"
+          className="h-full bg-[var(--status-ok)] transition-all duration-200"
           style={{ width: '100%' }}
         />
       );
@@ -124,7 +124,7 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
     if (item.status === 'failed') {
       return (
         <div
-          className="h-full rounded-full bg-[#DC2626] transition-all duration-300"
+          className="h-full bg-[var(--status-err)] transition-all duration-200"
           style={{ width: `${Math.max(clampedPercent, 100)}%` }}
         />
       );
@@ -132,7 +132,7 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
     if (item.status === 'fetchingMeta' || item.status === 'converting') {
       return (
         <div
-          className="h-full animate-pulse rounded-full bg-[#F59E0B] transition-all duration-300"
+          className="h-full animate-pulse bg-[var(--status-warn)] transition-all duration-200"
           style={{ width: item.status === 'converting' ? '100%' : '35%' }}
         />
       );
@@ -140,24 +140,26 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
     if (item.status === 'downloading') {
       return (
         <div
-          className="h-full rounded-full bg-gradient-to-r from-[#DB2777] to-[#2563EB] transition-all duration-200"
+          className="h-full bg-[var(--accent)] transition-all duration-150"
           style={{ width: `${clampedPercent}%` }}
         />
       );
     }
-    return (
-      <div
-        className="h-full rounded-full bg-slate-300 dark:bg-slate-700"
-        style={{ width: '0%' }}
-      />
-    );
+    return <div className="h-full bg-transparent" style={{ width: '0%' }} />;
   };
 
+  const secondaryDetail =
+    item.status === 'failed' && item.error
+      ? item.error
+      : item.status === 'completed' && item.outputPath
+        ? item.outputPath
+        : channelText;
+
   return (
-    <article className="group rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] p-3.5 shadow-sm transition-all duration-150 hover:border-slate-300 dark:border-white/[0.08] dark:bg-[#1E293B] dark:hover:border-white/[0.16] sm:p-4">
-      <div className="flex flex-col gap-3.5 sm:flex-row sm:items-center">
-        {/* Thumbnail Preview */}
-        <div className="relative h-20 w-full shrink-0 overflow-hidden rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] dark:border-white/[0.08] dark:bg-[#0F172A] sm:w-32">
+    <article className="group flex items-center gap-4 bg-[var(--bg-canvas)] px-5 py-[var(--row-py)] transition-colors duration-150 hover:bg-[var(--bg-hover)] sm:px-6">
+      {/* Compact 16:9 Thumbnail */}
+      {showThumbnails && (
+        <div className="relative h-[var(--thumb-h)] w-[var(--thumb-w)] shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-inset)]">
           {item.metadata?.thumbnailUrl && !thumbFailed ? (
             <img
               src={item.metadata.thumbnailUrl}
@@ -167,181 +169,172 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
               loading="lazy"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-[#94A3B8]">
+            <div className="flex h-full w-full items-center justify-center text-[var(--text-muted)]">
               {isVideo ? (
-                <Video className="h-6 w-6 opacity-70" strokeWidth={1.5} />
+                <Video className="h-5 w-5 opacity-70" strokeWidth={1.5} />
               ) : (
-                <Music className="h-6 w-6 opacity-70" strokeWidth={1.5} />
+                <Music className="h-5 w-5 opacity-70" strokeWidth={1.5} />
               )}
             </div>
           )}
 
           {durationText && (
-            <span className="font-mono-tabular absolute right-1.5 bottom-1.5 rounded bg-slate-950/80 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            <span className="font-mono-tabular absolute right-1 bottom-1 rounded-[0.125rem] bg-black/80 px-1 py-px text-[0.625rem] font-medium text-white">
               {durationText}
             </span>
           )}
         </div>
+      )}
 
-        {/* Details & Live Progress */}
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <h3
-                className="line-clamp-1 text-sm font-semibold text-slate-900 dark:text-white"
-                title={titleText}
-              >
-                {titleText}
-              </h3>
-              <p className="mt-0.5 truncate text-xs text-[#64748B] dark:text-[#94A3B8]">
-                {channelText}
-              </p>
-            </div>
-
-            {/* Format, Cover Art & Status Badges */}
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                  isVideo
-                    ? 'bg-[#2563EB]/15 text-[#2563EB] dark:text-blue-400'
-                    : 'bg-[#EC4899]/15 text-[#EC4899]'
-                }`}
-              >
-                {isVideo ? (
-                  <Video className="h-3 w-3" strokeWidth={2} />
-                ) : (
-                  <Music className="h-3 w-3" strokeWidth={2} />
-                )}
-                <span>.{item.format.toUpperCase()}</span>
-              </span>
-
-              {item.embedThumbnail && (
-                <span
-                  title="Cover thumbnail embedded"
-                  className="inline-flex items-center gap-1 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-white/[0.08] dark:bg-[#0F172A] dark:text-[#94A3B8]"
-                >
-                  <ImageIcon className="h-3 w-3 text-[#EC4899]" strokeWidth={1.75} />
-                  <span>Art</span>
-                </span>
-              )}
-
-              {renderStatusBadge()}
-            </div>
-          </div>
-
-          {/* Horizontal Progress Bar */}
-          <div
-            className="h-2 w-full overflow-hidden rounded-full bg-slate-200/80 dark:bg-[#0F172A]"
-            role="progressbar"
-            aria-valuenow={Math.round(clampedPercent)}
-            aria-valuemin={0}
-            aria-valuemax={100}
+      {/* Metadata + Progress Track + Telemetry */}
+      <div className="min-w-0 flex-1 space-y-2">
+        {/* Line 1: Title + Format/Art Tags + Status */}
+        <div className="flex items-center justify-between gap-2.5">
+          <h3
+            className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--text-primary)]"
+            title={titleText}
           >
-            {renderProgressFill()}
-          </div>
+            {titleText}
+          </h3>
 
-          {/* Bottom Metrics / Output / Error Row */}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="min-w-0 flex-1">
-              {item.status === 'failed' && item.error ? (
-                <p
-                  className="truncate font-medium text-[#DC2626]"
-                  title={item.error}
-                >
-                  {item.error}
-                </p>
-              ) : item.status === 'completed' && item.outputPath ? (
-                <p
-                  className="font-mono-tabular truncate text-[11px] text-[#64748B] dark:text-[#94A3B8]"
-                  title={item.outputPath}
-                >
-                  {item.outputPath}
-                </p>
-              ) : (
-                <span className="text-[11px] text-[#94A3B8]">
-                  {item.status === 'queued'
-                    ? 'Waiting to start'
-                    : item.status === 'fetchingMeta'
-                      ? 'Resolving media streams...'
-                      : item.status === 'converting'
-                        ? 'Processing audio/video with ffmpeg...'
-                        : item.status === 'cancelled'
-                          ? 'Download cancelled'
-                          : 'Downloading stream...'}
-                </span>
-              )}
-            </div>
-
-            <div className="font-mono-tabular flex shrink-0 items-center gap-3 text-xs text-[#64748B] dark:text-[#94A3B8]">
-              {item.speed && <span>{item.speed}</span>}
-              {item.eta && <span>ETA {item.eta}</span>}
-              <span className="font-medium text-slate-900 dark:text-slate-100">
-                {clampedPercent.toFixed(1)}%
+          <div className="flex shrink-0 items-center gap-1.5">
+            {!showThumbnails && durationText && (
+              <span className="font-mono-tabular hidden rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-1.5 py-0.5 text-[0.6875rem] text-[var(--text-muted)] sm:inline">
+                {durationText}
               </span>
-            </div>
+            )}
+            <span className="font-mono-tabular inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] font-medium text-[var(--text-secondary)]">
+              {isVideo ? (
+                <Video className="h-3 w-3 text-[var(--accent-text)]" strokeWidth={1.75} />
+              ) : (
+                <Music className="h-3 w-3 text-[var(--accent-text)]" strokeWidth={1.75} />
+              )}
+              <span>
+                {formatBadge}
+                {isVideo && item.resolution ? ` · ${item.resolution.toUpperCase()}` : ''}
+              </span>
+            </span>
+            {showCoverArtBadge && (
+              <span
+                title="Cover art embedded"
+                className="font-mono-tabular hidden rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] text-[var(--text-muted)] sm:inline"
+              >
+                ART
+              </span>
+            )}
+            <span className="inline-flex w-[4rem] justify-end">
+              {renderStatusLabel()}
+            </span>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex shrink-0 items-center justify-end gap-1.5 border-t border-[#E2E8F0] pt-2.5 dark:border-white/[0.08] sm:border-t-0 sm:pt-0">
-          {item.status === 'queued' && (
-            <button
-              type="button"
-              onClick={() => onStart(item.jobId)}
-              aria-label="Start download"
-              title="Start download"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#EC4899] text-white transition-colors duration-150 hover:bg-[#DB2777] cursor-pointer"
-            >
-              <Play className="h-4 w-4" strokeWidth={2} />
-            </button>
-          )}
+        {/* Line 2: Progress Track */}
+        <div
+          className="h-1 w-full overflow-hidden rounded-full bg-[var(--bg-inset)]"
+          role="progressbar"
+          aria-valuenow={Math.round(clampedPercent)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          {renderProgressFill()}
+        </div>
 
-          {isActive && (
-            <button
-              type="button"
-              onClick={() => onCancel(item.jobId)}
-              aria-label="Cancel download"
-              title="Cancel download"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#DC2626]/30 bg-[#DC2626]/10 text-[#DC2626] transition-colors duration-150 hover:bg-[#DC2626]/20 cursor-pointer"
-            >
-              <Square className="h-3.5 w-3.5 fill-current" strokeWidth={2} />
-            </button>
-          )}
+        {/* Line 3: Subtitle/Path/Error + Fixed-Width Tabular Telemetry */}
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <p
+            className={`min-w-0 flex-1 truncate ${
+              item.status === 'failed' && item.error
+                ? 'font-medium text-[var(--status-err)]'
+                : item.status === 'completed' && item.outputPath
+                  ? 'font-mono-tabular text-[var(--text-muted)]'
+                  : 'text-[var(--text-muted)]'
+            }`}
+            title={secondaryDetail}
+          >
+            {secondaryDetail}
+          </p>
 
-          {(item.status === 'failed' || item.status === 'cancelled') && (
-            <button
-              type="button"
-              onClick={() => onRetry(item.jobId)}
-              aria-label="Retry download"
-              title="Retry download"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#2563EB]/30 bg-[#2563EB]/10 text-[#2563EB] transition-colors duration-150 hover:bg-[#2563EB]/20 cursor-pointer dark:text-blue-400"
+          <div className="font-mono-tabular flex shrink-0 items-center gap-2 text-xs text-[var(--text-muted)]">
+            <span
+              className={`${
+                item.speed ? 'inline-block' : 'hidden sm:inline-block'
+              } w-[5.25rem] truncate text-right`}
             >
-              <RotateCcw className="h-4 w-4" strokeWidth={2} />
-            </button>
-          )}
-
-          {item.status === 'completed' && (
-            <button
-              type="button"
-              onClick={() => onOpenFolder(item)}
-              aria-label="Open output folder"
-              title="Open output folder"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#10B981]/30 bg-[#10B981]/10 text-[#10B981] transition-colors duration-150 hover:bg-[#10B981]/20 cursor-pointer"
+              {item.speed ?? ''}
+            </span>
+            <span
+              className={`${
+                item.eta ? 'inline-block' : 'hidden sm:inline-block'
+              } w-[5rem] truncate text-right`}
             >
-              <FolderOpen className="h-4 w-4" strokeWidth={2} />
-            </button>
-          )}
+              {item.eta ? `ETA ${item.eta}` : ''}
+            </span>
+            <span className="w-[3.25rem] text-right font-medium text-[var(--text-secondary)]">
+              {clampedPercent.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      </div>
 
+      {/* Compact Row Actions */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        {item.status === 'queued' && (
           <button
             type="button"
-            onClick={() => onRemove(item.jobId)}
-            aria-label="Remove from queue"
-            title="Remove from queue"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E8F0] bg-transparent text-[#94A3B8] transition-colors duration-150 hover:border-[#DC2626]/30 hover:bg-[#DC2626]/10 hover:text-[#DC2626] cursor-pointer dark:border-white/[0.08]"
+            onClick={() => onStart(item.jobId)}
+            aria-label="Start download"
+            title="Start download"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent)] text-[var(--accent-fg)] transition-colors duration-150 hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
           >
-            <Trash2 className="h-4 w-4" strokeWidth={1.75} />
+            <Play className="h-4 w-4" strokeWidth={1.75} />
           </button>
-        </div>
+        )}
+
+        {isActive && (
+          <button
+            type="button"
+            onClick={() => onCancel(item.jobId)}
+            aria-label="Cancel download"
+            title="Cancel download"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--status-err)]/35 bg-[var(--status-err)]/10 text-[var(--status-err)] transition-colors duration-150 hover:bg-[var(--status-err)]/20 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+          >
+            <Square className="h-3.5 w-3.5 fill-current" strokeWidth={1.75} />
+          </button>
+        )}
+
+        {(item.status === 'failed' || item.status === 'cancelled') && (
+          <button
+            type="button"
+            onClick={() => onRetry(item.jobId)}
+            aria-label="Retry download"
+            title="Retry download"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-transparent text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+          >
+            <RotateCcw className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+        )}
+
+        {item.status === 'completed' && (
+          <button
+            type="button"
+            onClick={() => onOpenFolder(item)}
+            aria-label="Open output folder"
+            title="Open output folder"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--status-ok)]/35 bg-[var(--status-ok)]/10 text-[var(--status-ok)] transition-colors duration-150 hover:bg-[var(--status-ok)]/20 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+          >
+            <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => onRemove(item.jobId)}
+          aria-label="Remove from queue"
+          title="Remove from queue"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-transparent text-[var(--text-muted)] transition-colors duration-150 hover:border-[var(--status-err)]/30 hover:bg-[var(--status-err)]/10 hover:text-[var(--status-err)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+        >
+          <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+        </button>
       </div>
     </article>
   );

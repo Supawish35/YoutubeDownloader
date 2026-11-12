@@ -2,6 +2,19 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+pub enum MediaType {
+    Audio,
+    Video,
+}
+
+impl Default for MediaType {
+    fn default() -> Self {
+        Self::Audio
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum MediaFormat {
     Mp3,
     Ogg,
@@ -9,6 +22,8 @@ pub enum MediaFormat {
     Flac,
     Wav,
     Mp4,
+    Mkv,
+    Webm,
 }
 
 impl Default for MediaFormat {
@@ -26,11 +41,32 @@ impl MediaFormat {
             Self::Flac => "flac",
             Self::Wav => "wav",
             Self::Mp4 => "mp4",
+            Self::Mkv => "mkv",
+            Self::Webm => "webm",
         }
     }
 
     pub fn is_audio(&self) -> bool {
-        !matches!(self, Self::Mp4)
+        matches!(
+            self,
+            Self::Mp3 | Self::Ogg | Self::Aac | Self::Flac | Self::Wav
+        )
+    }
+
+    pub fn is_video(&self) -> bool {
+        !self.is_audio()
+    }
+
+    pub fn media_type(&self) -> MediaType {
+        if self.is_video() {
+            MediaType::Video
+        } else {
+            MediaType::Audio
+        }
+    }
+
+    pub fn supports_cover_art(&self) -> bool {
+        matches!(self, Self::Mp3 | Self::Ogg | Self::Aac | Self::Flac)
     }
 
     pub fn yt_dlp_audio_format(&self) -> &'static str {
@@ -41,6 +77,37 @@ impl MediaFormat {
             Self::Flac => "flac",
             Self::Wav => "wav",
             Self::Mp4 => "mp4",
+            Self::Mkv => "mkv",
+            Self::Webm => "webm",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VideoResolution {
+    #[serde(rename = "best")]
+    Best,
+    #[serde(rename = "1080p")]
+    P1080,
+    #[serde(rename = "720p")]
+    P720,
+    #[serde(rename = "480p")]
+    P480,
+}
+
+impl Default for VideoResolution {
+    fn default() -> Self {
+        Self::Best
+    }
+}
+
+impl VideoResolution {
+    pub fn max_height(&self) -> Option<u32> {
+        match self {
+            Self::Best => None,
+            Self::P1080 => Some(1080),
+            Self::P720 => Some(720),
+            Self::P480 => Some(480),
         }
     }
 }
@@ -80,14 +147,120 @@ pub struct ProgressPayload {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    System,
+    Dark,
+    Light,
+}
+
+impl Default for ThemeMode {
+    fn default() -> Self {
+        Self::Dark
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AccentColor {
+    Vermilion,
+    Crimson,
+    Cobalt,
+    Emerald,
+    Amber,
+    Monochrome,
+}
+
+impl Default for AccentColor {
+    fn default() -> Self {
+        Self::Vermilion
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum UiDensity {
+    Compact,
+    Comfortable,
+    Spacious,
+}
+
+impl Default for UiDensity {
+    fn default() -> Self {
+        Self::Comfortable
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CornerStyle {
+    Balanced,
+    Sharp,
+}
+
+impl Default for CornerStyle {
+    fn default() -> Self {
+        Self::Balanced
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum FontScale {
+    Xs,
+    Sm,
+    Md,
+    Lg,
+    Xl,
+}
+
+impl Default for FontScale {
+    fn default() -> Self {
+        Self::Md
+    }
+}
+
+fn default_show_thumbnails() -> bool {
+    true
+}
+
+fn default_audio_format() -> MediaFormat {
+    MediaFormat::Mp3
+}
+
+fn default_video_format() -> MediaFormat {
+    MediaFormat::Mp4
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub output_dir: String,
     pub default_format: MediaFormat,
+    #[serde(default)]
+    pub default_type: MediaType,
+    #[serde(default = "default_audio_format")]
+    pub default_audio_format: MediaFormat,
+    #[serde(default = "default_video_format")]
+    pub default_video_format: MediaFormat,
+    #[serde(default)]
+    pub default_video_resolution: VideoResolution,
     pub embed_thumbnail: bool,
     pub dark_mode: bool,
     pub max_concurrent: usize,
+    #[serde(default)]
+    pub theme_mode: ThemeMode,
+    #[serde(default)]
+    pub accent_color: AccentColor,
+    #[serde(default)]
+    pub density: UiDensity,
+    #[serde(default)]
+    pub corner_style: CornerStyle,
+    #[serde(default)]
+    pub font_scale: FontScale,
+    #[serde(default = "default_show_thumbnails")]
+    pub show_thumbnails: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

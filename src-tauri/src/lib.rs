@@ -10,7 +10,9 @@ use tauri::{AppHandle, Manager, State};
 use tokio::sync::RwLock;
 
 use crate::downloader::DownloadManager;
-use crate::models::{AppSettings, BinaryStatus, MediaFormat, UpdateCheckResult, VideoMetadata};
+use crate::models::{
+    AppSettings, BinaryStatus, MediaFormat, UpdateCheckResult, VideoMetadata, VideoResolution,
+};
 
 pub struct AppState {
     pub app_data_dir: PathBuf,
@@ -86,6 +88,7 @@ async fn start_download(
     job_id: String,
     url: String,
     format: MediaFormat,
+    resolution: Option<VideoResolution>,
     embed_thumbnail: Option<bool>,
     output_dir: Option<String>,
 ) -> Result<(), String> {
@@ -100,6 +103,7 @@ async fn start_download(
     };
 
     let settings = state.settings.read().await;
+    let final_resolution = resolution.unwrap_or(settings.default_video_resolution);
     let final_embed = embed_thumbnail.unwrap_or(settings.embed_thumbnail);
     let final_output = output_dir.unwrap_or_else(|| settings.output_dir.clone());
     let ffmpeg_path = binary_status.ffmpeg_path;
@@ -109,6 +113,7 @@ async fn start_download(
         job_id,
         url,
         format,
+        final_resolution,
         final_embed,
         final_output,
         yt_dlp_bin,
