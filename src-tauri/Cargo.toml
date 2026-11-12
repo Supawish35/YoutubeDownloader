@@ -1,0 +1,28 @@
+[package]
+name = "youtube-downloader"
+version = "2.0.0"
+description = "Cross-platform YouTube Audio & Video Downloader built with Rust and Tauri"
+authors = ["Supawish35"]
+edition = "2021"
+
+[lib]
+name = "youtube_downloader_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "sync", "io-util", "fs", "macros", "rt-multi-thread", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+regex = "1"
+dirs = "6"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+which = "7"

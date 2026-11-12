@@ -1,0 +1,5 @@
+[env]
+PKG_CONFIG_PATH = "/home/supaw/.local/lib/tauri-sys-stubs/pkgconfig"
+
+[build]
+rustflags = ["-L", "/home/supaw/.local/lib/tauri-sys-stubs/lib"]
