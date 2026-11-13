@@ -17,6 +17,17 @@ export type DownloadStatus =
   | 'failed'
   | 'cancelled';
 
+export type BrowserCookies =
+  | 'none'
+  | 'chrome'
+  | 'firefox'
+  | 'brave'
+  | 'edge'
+  | 'chromium'
+  | 'opera'
+  | 'vivaldi'
+  | 'safari';
+
 export interface VideoMetadata {
   id: string;
   url: string;
@@ -24,6 +35,7 @@ export interface VideoMetadata {
   channel: string;
   durationSecs: number | null;
   thumbnailUrl: string | null;
+  source?: string;
 }
 
 export interface ProgressPayload {
@@ -68,6 +80,7 @@ export interface AppSettings {
   cornerStyle: CornerStyle;
   fontScale: FontScale;
   showThumbnails: boolean;
+  cookiesBrowser: BrowserCookies;
 }
 
 export interface BinaryStatus {

@@ -20,10 +20,12 @@ import {
   VIDEO_FORMAT_OPTIONS,
   VIDEO_RESOLUTION_OPTIONS,
 } from '@/lib/mediaFormats';
+import { BROWSER_COOKIE_OPTIONS } from '@/lib/mediaSources';
 import type {
   AccentColor,
   AppSettings,
   AudioFormat,
+  BrowserCookies,
   CornerStyle,
   FontScale,
   MediaType,
@@ -677,7 +679,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       Default Download Type
                     </div>
                     <p className="text-[0.6875rem] text-[var(--text-muted)]">
-                      Choose whether the intake bar starts in Audio or Video mode.
+                      Media type used when pressing Enter (download) or Shift+Enter (queue) in the URL bar.
                     </p>
                   </div>
                   {renderSegmentedOption<MediaType>(
@@ -828,6 +830,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <span>Choose Folder</span>
                   </button>
                 </div>
+              </div>
+
+              {/* Browser Cookies for Authenticated Sources */}
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-canvas)] px-4 py-3.5">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[0.8125rem] font-medium text-[var(--text-primary)]">
+                    Browser Cookies
+                  </div>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Pass session cookies to yt-dlp for Facebook, Instagram, X, or age-restricted links.
+                  </p>
+                </div>
+                <PrecisionSelect<BrowserCookies>
+                  value={settings.cookiesBrowser}
+                  options={BROWSER_COOKIE_OPTIONS}
+                  onChange={(cookiesBrowser) =>
+                    onUpdateSettings((prev) => ({
+                      ...prev,
+                      cookiesBrowser,
+                    }))
+                  }
+                  ariaLabel="Browser cookies source"
+                  triggerClassName="min-w-[12rem]"
+                  menuClassName="min-w-[16rem]"
+                  align="right"
+                />
               </div>
 
               {/* Max Concurrent Downloads */}

@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
+  ChevronDown,
   ClipboardPaste,
-  Download,
   FolderOpen,
   FolderSearch,
   Image as ImageIcon,
@@ -16,10 +16,13 @@ import {
 import PrecisionSelect from '~components/PrecisionSelect';
 import {
   AUDIO_FORMAT_OPTIONS,
+  getFormatOption,
+  getResolutionOption,
   supportsCoverArt,
   VIDEO_FORMAT_OPTIONS,
   VIDEO_RESOLUTION_OPTIONS,
 } from '@/lib/mediaFormats';
+import { detectMediaSource } from '@/lib/mediaSources';
 import type {
   AudioFormat,
   MediaFormat,
@@ -29,8 +32,7 @@ import type {
 } from '~types/downloader';
 
 export interface ControlPanelProps {
-  selectedType: MediaType;
-  onTypeChange: (type: MediaType) => void;
+  defaultType: MediaType;
   selectedAudioFormat: AudioFormat;
   selectedVideoFormat: VideoFormat;
   onFormatChange: (format: MediaFormat) => void;
@@ -41,15 +43,14 @@ export interface ControlPanelProps {
   outputDir: string;
   onChangeOutputDir: () => void;
   onOpenOutputDir: () => void;
-  onDownloadSingle: (url: string) => Promise<boolean>;
-  onAddToQueue: (url: string) => Promise<boolean>;
+  onDownloadMedia: (url: string, mediaType: MediaType) => Promise<boolean>;
+  onAddToQueue: (url: string, mediaType: MediaType) => Promise<boolean>;
   validateUrlFn: (url: string) => Promise<string>;
   binaryReady: boolean;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
-  selectedType,
-  onTypeChange,
+  defaultType,
   selectedAudioFormat,
   selectedVideoFormat,
   onFormatChange,
@@ -60,7 +61,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   outputDir,
   onChangeOutputDir,
   onOpenOutputDir,
-  onDownloadSingle,
+  onDownloadMedia,
   onAddToQueue,
   validateUrlFn,
   binaryReady,
@@ -69,6 +70,33 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const [validationState, setValidationState] = useState<'idle' | 'valid' | 'invalid'>('idle');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [queueMenuOpen, setQueueMenuOpen] = useState(false);
+
+  const queueMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!queueMenuOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (queueMenuRef.current && !queueMenuRef.current.contains(event.target as Node)) {
+        setQueueMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setQueueMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [queueMenuOpen]);
 
   const runValidation = async (raw: string): Promise<boolean> => {
     const trimmed = raw.trim();
@@ -88,9 +116,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           ? err.message
           : typeof err === 'string'
             ? err
-            : 'Please enter a valid YouTube URL';
+            : 'Please enter a valid media URL';
       setValidationState('invalid');
-      setValidationError(message);
+      setValidationError(message || 'Please enter a valid media URL');
       return false;
     }
   };
@@ -124,40 +152,25 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     setValidationError(null);
   };
 
-  const handleDownloadSingle = async () => {
+  const submitUrl = async (mediaType: MediaType, startImmediately: boolean) => {
     if (isSubmitting) return;
-    const isValid = await runValidation(urlInput);
-    if (!isValid) {
-      if (!urlInput.trim()) {
-        setValidationState('invalid');
-        setValidationError('Paste a YouTube URL first.');
-      }
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const ok = await onDownloadSingle(urlInput.trim());
-      if (ok) {
-        handleClear();
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+    setQueueMenuOpen(false);
 
-  const handleAddToQueue = async () => {
-    if (isSubmitting) return;
     const isValid = await runValidation(urlInput);
     if (!isValid) {
       if (!urlInput.trim()) {
         setValidationState('invalid');
-        setValidationError('Paste a YouTube URL first.');
+        setValidationError('Paste a media URL first.');
       }
       return;
     }
+
     setIsSubmitting(true);
     try {
-      const ok = await onAddToQueue(urlInput.trim());
+      const trimmed = urlInput.trim();
+      const ok = startImmediately
+        ? await onDownloadMedia(trimmed, mediaType)
+        : await onAddToQueue(trimmed, mediaType);
       if (ok) {
         handleClear();
       }
@@ -169,11 +182,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (e.shiftKey) {
-        void handleAddToQueue();
-      } else {
-        void handleDownloadSingle();
-      }
+      void submitUrl(defaultType, !e.shiftKey);
     }
   };
 
@@ -184,46 +193,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         ? 'border-[var(--status-ok)]/70 focus-within:ring-1 focus-within:ring-[var(--status-ok)]'
         : 'border-[var(--border-hairline)] focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-subtle)]';
 
-  const isVideoMode = selectedType === 'video';
-  const activeFormat: MediaFormat = isVideoMode ? selectedVideoFormat : selectedAudioFormat;
-  const coverArtSupported = !isVideoMode && supportsCoverArt(activeFormat);
-  const coverArtTitle = isVideoMode
-    ? 'Cover art embedding is skipped in Video mode'
-    : !coverArtSupported
-      ? 'WAV container does not support embedded cover art'
-      : 'Embed video thumbnail as cover art (--embed-thumbnail)';
-
-  const renderTypeButton = (
-    type: MediaType,
-    label: string,
-    Icon: React.FC<{ className?: string; strokeWidth?: number }>
-  ) => {
-    const isActive = selectedType === type;
-    return (
-      <button
-        key={type}
-        type="button"
-        role="radio"
-        aria-checked={isActive}
-        onClick={() => onTypeChange(type)}
-        className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-3 text-xs font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer ${
-          isActive
-            ? 'bg-[var(--accent)] text-[var(--accent-fg)]'
-            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
-        }`}
-      >
-        <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-        <span>{label}</span>
-      </button>
-    );
-  };
+  const detectedSource =
+    validationState === 'valid' && urlInput.trim() ? detectMediaSource(urlInput) : null;
+  const videoBadge = getFormatOption(selectedVideoFormat).badge;
+  const resBadge = getResolutionOption(selectedResolution).badge;
+  const audioBadge = getFormatOption(selectedAudioFormat).badge;
+  const coverArtSupported = supportsCoverArt(selectedAudioFormat);
+  const coverArtTitle = !coverArtSupported
+    ? 'WAV container does not support embedded cover art'
+    : 'Embed thumbnail as cover art for Audio downloads (--embed-thumbnail)';
 
   return (
     <section
       aria-label="Download controls"
       className="shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-panel)] px-5 py-4 sm:px-6"
     >
-      {/* Row 1: URL Intake + Primary Actions */}
+      {/* Row 1: URL Intake + Dual Video/Audio Download CTAs + Queue Picker */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div
           className={`flex h-11 flex-1 items-center gap-2.5 rounded-[var(--radius-md)] border bg-[var(--bg-inset)] px-3.5 transition-colors duration-150 ${inputBorderClass}`}
@@ -243,18 +228,19 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             value={urlInput}
             onChange={(e) => handleUrlChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Paste YouTube video, Shorts, or Music URL (Enter to download)..."
-            aria-label="YouTube URL"
+            placeholder="Paste YouTube, TikTok, Facebook, X, Instagram, or media URL..."
+            aria-label="Media URL"
             aria-invalid={validationState === 'invalid'}
             className="w-full bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
           />
 
-          {validationState === 'valid' && (
+          {validationState === 'valid' && detectedSource && (
             <span
-              className="flex h-5 w-5 shrink-0 items-center justify-center text-[var(--status-ok)]"
-              title="Valid YouTube URL"
+              className="font-mono-tabular inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--status-ok)]/35 bg-[var(--status-ok)]/10 px-1.5 py-0.5 text-[0.6875rem] font-medium uppercase text-[var(--status-ok)]"
+              title={`Valid ${detectedSource} URL`}
             >
-              <Check className="h-4 w-4" strokeWidth={2.25} />
+              <Check className="h-3 w-3" strokeWidth={2.25} />
+              <span>{detectedSource}</span>
             </span>
           )}
 
@@ -282,33 +268,104 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </button>
         </div>
 
-        {/* Action CTAs */}
+        {/* Action CTAs: Equal Video & Audio Download Buttons + Queue Picker */}
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => void handleDownloadSingle()}
+            onClick={() => void submitUrl('video', true)}
             disabled={isSubmitting || !binaryReady}
             title={
               binaryReady
-                ? 'Validate, add to queue, and start download immediately (Enter)'
+                ? `Download Video immediately (${videoBadge} · ${resBadge})`
                 : 'Install yt-dlp first to start downloads'
             }
-            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--accent)] px-5 text-sm font-medium text-[var(--accent-fg)] transition-colors duration-150 hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] cursor-pointer sm:flex-initial"
+            aria-label="Download Video"
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--accent)] px-4 text-sm font-medium text-[var(--accent-fg)] transition-colors duration-150 hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] cursor-pointer sm:flex-initial"
           >
-            <Download className="h-4 w-4" strokeWidth={1.75} />
-            <span>Download</span>
+            <Video className="h-4 w-4" strokeWidth={1.75} />
+            <span>Video</span>
           </button>
 
           <button
             type="button"
-            onClick={() => void handleAddToQueue()}
-            disabled={isSubmitting}
-            title="Add URL to queue without starting immediately (Shift+Enter)"
-            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-transparent px-4 text-sm font-medium text-[var(--text-primary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] cursor-pointer"
+            onClick={() => void submitUrl('audio', true)}
+            disabled={isSubmitting || !binaryReady}
+            title={
+              binaryReady
+                ? `Download Audio immediately (${audioBadge})`
+                : 'Install yt-dlp first to start downloads'
+            }
+            aria-label="Download Audio"
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--accent)] px-4 text-sm font-medium text-[var(--accent-fg)] transition-colors duration-150 hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] cursor-pointer sm:flex-initial"
           >
-            <Plus className="h-4 w-4 text-[var(--text-secondary)]" strokeWidth={1.75} />
-            <span>Queue</span>
+            <Music className="h-4 w-4" strokeWidth={1.75} />
+            <span>Audio</span>
           </button>
+
+          {/* Compact Queue Mode Picker */}
+          <div ref={queueMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setQueueMenuOpen((prev) => !prev)}
+              disabled={isSubmitting}
+              aria-haspopup="menu"
+              aria-expanded={queueMenuOpen}
+              aria-label="Add to queue as Video or Audio"
+              title="Add URL to queue as Video or Audio (Shift+Enter uses default)"
+              className={`inline-flex h-11 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border bg-transparent px-3.5 text-sm font-medium text-[var(--text-primary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] cursor-pointer ${
+                queueMenuOpen
+                  ? 'border-[var(--accent)] bg-[var(--bg-hover)]'
+                  : 'border-[var(--border-hairline)]'
+              }`}
+            >
+              <Plus className="h-4 w-4 text-[var(--text-secondary)]" strokeWidth={1.75} />
+              <span>Queue</span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 text-[var(--text-muted)] transition-transform duration-150 ${
+                  queueMenuOpen ? 'rotate-180 text-[var(--accent-text)]' : ''
+                }`}
+                strokeWidth={1.75}
+              />
+            </button>
+
+            {queueMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Queue media type"
+                className="absolute right-0 top-[calc(100%+0.375rem)] z-40 min-w-[14.5rem] overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1 shadow-xl"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void submitUrl('video', false)}
+                  className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-xs text-[var(--text-primary)] transition-colors duration-150 hover:bg-[var(--bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+                >
+                  <span className="flex items-center gap-2 font-medium">
+                    <Video className="h-3.5 w-3.5 text-[var(--accent-text)]" strokeWidth={1.75} />
+                    <span>Queue Video</span>
+                  </span>
+                  <span className="font-mono-tabular rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-1.5 py-0.5 text-[0.6875rem] text-[var(--text-secondary)]">
+                    {videoBadge} · {resBadge}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void submitUrl('audio', false)}
+                  className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-xs text-[var(--text-primary)] transition-colors duration-150 hover:bg-[var(--bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+                >
+                  <span className="flex items-center gap-2 font-medium">
+                    <Music className="h-3.5 w-3.5 text-[var(--accent-text)]" strokeWidth={1.75} />
+                    <span>Queue Audio</span>
+                  </span>
+                  <span className="font-mono-tabular rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-1.5 py-0.5 text-[0.6875rem] text-[var(--text-secondary)]">
+                    {audioBadge}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -323,53 +380,43 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </div>
       )}
 
-      {/* Row 2: Media Type Switch + Extension/Quality Popovers + Cover Art + Output Folder */}
+      {/* Row 2: Side-by-Side Video & Audio Format Controls + Cover Art + Output Folder */}
       <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Audio / Video Type Switch */}
-          <div
-            role="radiogroup"
-            aria-label="Download type"
-            className="inline-flex h-9 items-center gap-0.5 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] p-0.5"
-          >
-            {renderTypeButton('audio', 'Audio', Music)}
-            {renderTypeButton('video', 'Video', Video)}
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Video Extension & Max Resolution */}
+          <PrecisionSelect<VideoFormat>
+            value={selectedVideoFormat}
+            options={VIDEO_FORMAT_OPTIONS}
+            onChange={(fmt) => onFormatChange(fmt)}
+            prefix="Video"
+            ariaLabel="Video file extension"
+            menuClassName="min-w-[16rem]"
+          />
 
-          {/* Contextual Extension Dropdown */}
-          {isVideoMode ? (
-            <PrecisionSelect<VideoFormat>
-              value={selectedVideoFormat}
-              options={VIDEO_FORMAT_OPTIONS}
-              onChange={(fmt) => onFormatChange(fmt)}
-              prefix="Ext"
-              ariaLabel="Video file extension"
-              menuClassName="min-w-[16rem]"
-            />
-          ) : (
-            <PrecisionSelect<AudioFormat>
-              value={selectedAudioFormat}
-              options={AUDIO_FORMAT_OPTIONS}
-              onChange={(fmt) => onFormatChange(fmt)}
-              prefix="Ext"
-              ariaLabel="Audio file extension"
-              menuClassName="min-w-[16rem]"
-            />
-          )}
+          <PrecisionSelect<VideoResolution>
+            value={selectedResolution}
+            options={VIDEO_RESOLUTION_OPTIONS}
+            onChange={onResolutionChange}
+            prefix="Res"
+            ariaLabel="Video maximum resolution"
+            menuClassName="min-w-[15rem]"
+          />
 
-          {/* Video Resolution Dropdown (Video mode only) */}
-          {isVideoMode && (
-            <PrecisionSelect<VideoResolution>
-              value={selectedResolution}
-              options={VIDEO_RESOLUTION_OPTIONS}
-              onChange={onResolutionChange}
-              prefix="Res"
-              ariaLabel="Video maximum resolution"
-              menuClassName="min-w-[15rem]"
-            />
-          )}
+          <span
+            className="mx-0.5 hidden h-5 w-px bg-[var(--border-hairline)] sm:inline-block"
+            aria-hidden="true"
+          />
 
-          {/* Embed Cover Art Switch (enabled for supported Audio formats) */}
+          {/* Audio Extension & Cover Art Switch */}
+          <PrecisionSelect<AudioFormat>
+            value={selectedAudioFormat}
+            options={AUDIO_FORMAT_OPTIONS}
+            onChange={(fmt) => onFormatChange(fmt)}
+            prefix="Audio"
+            ariaLabel="Audio file extension"
+            menuClassName="min-w-[16rem]"
+          />
+
           <button
             type="button"
             role="switch"

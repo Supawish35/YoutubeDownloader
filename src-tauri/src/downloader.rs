@@ -8,10 +8,12 @@ use crate::models::{
     DownloadStatus, MediaFormat, ProgressPayload, VideoMetadata, VideoResolution,
 };
 
-pub fn validate_youtube_url(url: &str) -> Result<String, String> {
-    let trimmed = url.trim();
+fn extract_clean_host(trimmed: &str) -> Result<String, String> {
     if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
         return Err("URL must start with http:// or https://".to_string());
+    }
+    if trimmed.chars().any(char::is_whitespace) {
+        return Err("URL cannot contain whitespace".to_string());
     }
 
     let scheme_end = match trimmed.find("://") {
@@ -20,22 +22,102 @@ pub fn validate_youtube_url(url: &str) -> Result<String, String> {
     };
 
     let rest = &trimmed[scheme_end..];
-    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let host = &rest[..host_end].to_lowercase();
-    let host_clean = host.split(':').next().unwrap_or(host);
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    let host_port = authority.rsplit('@').next().unwrap_or(authority);
+    let host_clean = host_port
+        .split(':')
+        .next()
+        .unwrap_or(host_port)
+        .to_lowercase();
 
-    let valid_hosts = [
-        "youtube.com",
-        "www.youtube.com",
-        "m.youtube.com",
-        "music.youtube.com",
-        "youtu.be",
-    ];
-
-    if !valid_hosts.contains(&host_clean) {
-        return Err(format!("Invalid YouTube host: {host_clean}"));
+    if host_clean.is_empty()
+        || !host_clean.contains('.')
+        || host_clean.starts_with('.')
+        || host_clean.ends_with('.')
+        || host_clean.contains("..")
+        || !host_clean
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    {
+        return Err(format!("Invalid media URL host: {host_clean}"));
     }
 
+    Ok(host_clean)
+}
+
+fn host_matches(host: &str, domain: &str) -> bool {
+    host == domain || host.ends_with(&format!(".{domain}"))
+}
+
+pub fn detect_source_label(url: &str) -> String {
+    let Ok(host) = extract_clean_host(url.trim()) else {
+        return "Web".to_string();
+    };
+
+    if host_matches(&host, "youtube.com") || host_matches(&host, "youtu.be") {
+        "YouTube".to_string()
+    } else if host_matches(&host, "tiktok.com") {
+        "TikTok".to_string()
+    } else if host_matches(&host, "facebook.com")
+        || host_matches(&host, "fb.watch")
+        || host_matches(&host, "fb.gg")
+        || host_matches(&host, "fb.com")
+    {
+        "Facebook".to_string()
+    } else if host_matches(&host, "x.com")
+        || host_matches(&host, "twitter.com")
+        || host_matches(&host, "t.co")
+        || host_matches(&host, "vxtwitter.com")
+        || host_matches(&host, "fxtwitter.com")
+    {
+        "X".to_string()
+    } else if host_matches(&host, "instagram.com") || host_matches(&host, "instagr.am") {
+        "Instagram".to_string()
+    } else if host_matches(&host, "soundcloud.com") {
+        "SoundCloud".to_string()
+    } else if host_matches(&host, "vimeo.com") {
+        "Vimeo".to_string()
+    } else if host_matches(&host, "twitch.tv") {
+        "Twitch".to_string()
+    } else if host_matches(&host, "reddit.com") || host_matches(&host, "redd.it") {
+        "Reddit".to_string()
+    } else if host_matches(&host, "bilibili.com") || host_matches(&host, "b23.tv") {
+        "Bilibili".to_string()
+    } else if host_matches(&host, "dailymotion.com") || host_matches(&host, "dai.ly") {
+        "Dailymotion".to_string()
+    } else if host_matches(&host, "bandcamp.com") {
+        "Bandcamp".to_string()
+    } else {
+        host.strip_prefix("www.")
+            .or_else(|| host.strip_prefix("m."))
+            .unwrap_or(&host)
+            .to_string()
+    }
+}
+
+fn normalize_extractor_source(extractor: Option<&str>, url: &str) -> String {
+    match extractor.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        Some(k) if k.starts_with("youtube") => "YouTube".to_string(),
+        Some(k) if k.starts_with("tiktok") => "TikTok".to_string(),
+        Some(k) if k.starts_with("facebook") => "Facebook".to_string(),
+        Some("twitter") | Some("x") => "X".to_string(),
+        Some(k) if k.starts_with("instagram") => "Instagram".to_string(),
+        Some(k) if k.starts_with("soundcloud") => "SoundCloud".to_string(),
+        Some(k) if k.starts_with("vimeo") => "Vimeo".to_string(),
+        Some(k) if k.starts_with("twitch") => "Twitch".to_string(),
+        Some(k) if k.starts_with("reddit") => "Reddit".to_string(),
+        Some(k) if k.starts_with("bilibili") => "Bilibili".to_string(),
+        Some(k) if k.starts_with("dailymotion") => "Dailymotion".to_string(),
+        Some(k) if k.starts_with("bandcamp") => "Bandcamp".to_string(),
+        Some(_) => detect_source_label(url),
+        None => detect_source_label(url),
+    }
+}
+
+pub fn validate_media_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    extract_clean_host(trimmed)?;
     Ok(trimmed.to_string())
 }
 
@@ -73,10 +155,12 @@ pub fn build_yt_dlp_args(
     embed_thumbnail: bool,
     output_dir: &str,
     ffmpeg_path: Option<&str>,
+    cookies_browser: Option<&str>,
 ) -> Vec<String> {
     let mut args = vec![
         "--no-playlist".to_string(),
         "--newline".to_string(),
+        "--windows-filenames".to_string(),
         "--embed-metadata".to_string(),
         "--progress-template".to_string(),
         "download:PROGRESS:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s"
@@ -84,6 +168,11 @@ pub fn build_yt_dlp_args(
         "--print".to_string(),
         "after_move:FILEPATH:%(filepath)s".to_string(),
     ];
+
+    if let Some(browser) = cookies_browser.map(str::trim).filter(|b| !b.is_empty()) {
+        args.push("--cookies-from-browser".to_string());
+        args.push(browser.to_string());
+    }
 
     if let Some(ffmpeg) = ffmpeg_path {
         args.push("--ffmpeg-location".to_string());
@@ -150,12 +239,21 @@ pub fn parse_progress_line(line: &str) -> Option<(f64, Option<String>, Option<St
     Some((percent, speed, eta))
 }
 
-pub async fn fetch_metadata(yt_dlp_bin: &str, url: &str) -> Result<VideoMetadata, String> {
-    let validated_url = validate_youtube_url(url)?;
+pub async fn fetch_metadata(
+    yt_dlp_bin: &str,
+    url: &str,
+    cookies_browser: Option<&str>,
+) -> Result<VideoMetadata, String> {
+    let validated_url = validate_media_url(url)?;
 
-    let output = tokio::process::Command::new(yt_dlp_bin)
-        .args(["--dump-single-json", "--no-playlist", "--no-warnings"])
-        .arg(&validated_url)
+    let mut cmd = tokio::process::Command::new(yt_dlp_bin);
+    cmd.args(["--dump-single-json", "--no-playlist", "--no-warnings"]);
+    if let Some(browser) = cookies_browser.map(str::trim).filter(|b| !b.is_empty()) {
+        cmd.args(["--cookies-from-browser", browser]);
+    }
+    cmd.arg(&validated_url);
+
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run yt-dlp: {e}"))?;
@@ -176,13 +274,25 @@ pub async fn fetch_metadata(yt_dlp_bin: &str, url: &str) -> Result<VideoMetadata
     let title = val
         .get("title")
         .and_then(|v| v.as_str())
-        .unwrap_or("Unknown Title")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Untitled Media")
         .to_string();
+    let source = normalize_extractor_source(
+        val.get("extractor_key")
+            .or_else(|| val.get("extractor"))
+            .and_then(|v| v.as_str()),
+        &validated_url,
+    );
     let channel = val
         .get("uploader")
         .or_else(|| val.get("channel"))
+        .or_else(|| val.get("creator"))
+        .or_else(|| val.get("uploader_id"))
         .and_then(|v| v.as_str())
-        .unwrap_or("Unknown Channel")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&source)
         .to_string();
     let duration_secs = val.get("duration").and_then(|v| v.as_u64());
     let thumbnail_url = val
@@ -197,6 +307,7 @@ pub async fn fetch_metadata(yt_dlp_bin: &str, url: &str) -> Result<VideoMetadata
         channel,
         duration_secs,
         thumbnail_url,
+        source,
     })
 }
 
@@ -225,6 +336,7 @@ impl DownloadManager {
         output_dir: String,
         yt_dlp_bin: String,
         ffmpeg_path: Option<String>,
+        cookies_browser: Option<String>,
     ) {
         let sem = Arc::clone(&self.semaphore);
         let cancellations = Arc::clone(&self.active_cancellations);
@@ -288,6 +400,7 @@ impl DownloadManager {
                 embed_thumbnail,
                 &output_dir,
                 ffmpeg_path.as_deref(),
+                cookies_browser.as_deref(),
             );
 
             let mut cmd = tokio::process::Command::new(&yt_dlp_bin);
@@ -454,37 +567,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_validate_youtube_url_valid() {
-        let valid_urls = [
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            "http://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            "https://youtu.be/dQw4w9WgXcQ",
-            "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
-            "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
-            "https://youtube.com/shorts/abcdef12345",
-            "https://youtube.com/watch?v=123&t=45s",
+    fn test_validate_media_url_valid_platforms() {
+        let valid_cases = [
+            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "YouTube"),
+            ("http://www.youtube.com/watch?v=dQw4w9WgXcQ", "YouTube"),
+            ("https://youtu.be/dQw4w9WgXcQ", "YouTube"),
+            ("https://m.youtube.com/watch?v=dQw4w9WgXcQ", "YouTube"),
+            ("https://music.youtube.com/watch?v=dQw4w9WgXcQ", "YouTube"),
+            ("https://youtube.com/shorts/abcdef12345", "YouTube"),
+            ("https://www.tiktok.com/@creator/video/71234567890", "TikTok"),
+            ("https://vm.tiktok.com/ZM8abc123/", "TikTok"),
+            ("https://www.facebook.com/watch/?v=123456789", "Facebook"),
+            ("https://fb.watch/abc123XYZ/", "Facebook"),
+            ("https://x.com/user/status/1234567890", "X"),
+            ("https://twitter.com/user/status/1234567890", "X"),
+            ("https://www.instagram.com/reel/C123456/", "Instagram"),
+            ("https://soundcloud.com/artist/track", "SoundCloud"),
+            ("https://vimeo.com/123456", "Vimeo"),
+            ("https://clips.twitch.tv/ClipSlugHere", "Twitch"),
+            ("https://www.reddit.com/r/videos/comments/abc/title/", "Reddit"),
         ];
 
-        for u in valid_urls {
-            let res = validate_youtube_url(u);
+        for (u, expected_source) in valid_cases {
+            let res = validate_media_url(u);
             assert!(res.is_ok(), "Expected {u} to be valid");
             assert_eq!(res.unwrap(), u);
+            assert_eq!(detect_source_label(u), expected_source);
         }
     }
 
     #[test]
-    fn test_validate_youtube_url_invalid() {
+    fn test_validate_media_url_invalid() {
         let invalid_urls = [
-            "https://vimeo.com/123456",
-            "https://notyoutube.com/watch?v=123",
             "ftp://youtube.com/watch?v=123",
             "just plain text",
-            "https://malicious-youtube.com/watch?v=123",
+            "https://localhost",
+            "https://not a valid url.com/watch",
+            "https://.invalid.com/video",
+            "https://invalid..com/video",
             "",
         ];
 
         for u in invalid_urls {
-            let res = validate_youtube_url(u);
+            let res = validate_media_url(u);
             assert!(res.is_err(), "Expected {u} to be invalid");
         }
     }
@@ -511,10 +636,14 @@ mod tests {
                 true,
                 out_dir,
                 ffmpeg,
+                Some("firefox"),
             );
             assert!(args.contains(&"--no-playlist".to_string()));
             assert!(args.contains(&"--newline".to_string()));
+            assert!(args.contains(&"--windows-filenames".to_string()));
             assert!(args.contains(&"--embed-metadata".to_string()));
+            assert!(args.contains(&"--cookies-from-browser".to_string()));
+            assert!(args.contains(&"firefox".to_string()));
             assert!(args.contains(&"--ffmpeg-location".to_string()));
             assert!(args.contains(&"/usr/bin/ffmpeg".to_string()));
             assert!(args.contains(&"-x".to_string()));
@@ -535,7 +664,7 @@ mod tests {
 
     #[test]
     fn test_build_yt_dlp_args_video_containers_and_resolutions() {
-        let url = "https://www.youtube.com/watch?v=test";
+        let url = "https://www.tiktok.com/@user/video/123";
         let out_dir = "/home/user/downloads";
 
         let mp4_best = build_yt_dlp_args(
@@ -545,8 +674,10 @@ mod tests {
             true,
             out_dir,
             None,
+            None,
         );
         assert!(!mp4_best.contains(&"-x".to_string()));
+        assert!(!mp4_best.contains(&"--cookies-from-browser".to_string()));
         // Cover art should be skipped on video formats even when embed_thumbnail is true
         assert!(!mp4_best.contains(&"--embed-thumbnail".to_string()));
         assert!(mp4_best.contains(&"--merge-output-format".to_string()));
@@ -561,6 +692,7 @@ mod tests {
             false,
             out_dir,
             None,
+            None,
         );
         assert!(mkv_1080.contains(&"bestvideo[height<=1080]+bestaudio/best[height<=1080]/best".to_string()));
         assert!(mkv_1080.contains(&"mkv".to_string()));
@@ -571,6 +703,7 @@ mod tests {
             VideoResolution::P720,
             false,
             out_dir,
+            None,
             None,
         );
         let selector_idx = webm_720.iter().position(|a| a == "-f").unwrap() + 1;

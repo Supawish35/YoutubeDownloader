@@ -60,7 +60,7 @@ async fn update_yt_dlp(
 
 #[tauri::command]
 fn validate_url(url: String) -> Result<String, String> {
-    downloader::validate_youtube_url(&url)
+    downloader::validate_media_url(&url)
 }
 
 #[tauri::command]
@@ -78,7 +78,12 @@ async fn fetch_video_info(
         }
     };
 
-    downloader::fetch_metadata(&yt_dlp_bin, &url).await
+    let cookies_browser = {
+        let settings = state.settings.read().await;
+        settings.cookies_browser.as_yt_dlp_arg().map(str::to_string)
+    };
+
+    downloader::fetch_metadata(&yt_dlp_bin, &url, cookies_browser.as_deref()).await
 }
 
 #[tauri::command]
@@ -92,6 +97,7 @@ async fn start_download(
     embed_thumbnail: Option<bool>,
     output_dir: Option<String>,
 ) -> Result<(), String> {
+    let validated_url = downloader::validate_media_url(&url)?;
     let binary_status = binaries::check_binaries_status(&state.app_data_dir).await;
     let yt_dlp_bin = match binary_status.yt_dlp_path {
         Some(p) => p,
@@ -106,18 +112,20 @@ async fn start_download(
     let final_resolution = resolution.unwrap_or(settings.default_video_resolution);
     let final_embed = embed_thumbnail.unwrap_or(settings.embed_thumbnail);
     let final_output = output_dir.unwrap_or_else(|| settings.output_dir.clone());
+    let cookies_browser = settings.cookies_browser.as_yt_dlp_arg().map(str::to_string);
     let ffmpeg_path = binary_status.ffmpeg_path;
 
     state.download_manager.start_job(
         app,
         job_id,
-        url,
+        validated_url,
         format,
         final_resolution,
         final_embed,
         final_output,
         yt_dlp_bin,
         ffmpeg_path,
+        cookies_browser,
     );
 
     Ok(())

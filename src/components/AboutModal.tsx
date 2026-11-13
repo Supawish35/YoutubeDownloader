@@ -1,12 +1,12 @@
 import React, { useEffect } from 'react';
 import {
-  ArrowDownToLine,
   CheckCircle2,
   ExternalLink,
   Terminal,
   X,
   XCircle,
 } from 'lucide-react';
+import { AppLogo } from '~components/AppLogo';
 import type { BinaryStatus } from '~types/downloader';
 
 export interface AboutModalProps {
@@ -52,9 +52,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-[var(--border-hairline)] px-6 py-4">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] text-[var(--accent-text)]">
-              <ArrowDownToLine className="h-5 w-5" strokeWidth={1.75} />
-            </div>
+            <AppLogo className="h-10 w-10" />
             <div>
               <div className="flex items-baseline gap-2.5">
                 <h2
@@ -68,7 +66,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                 </span>
               </div>
               <p className="mt-0.5 text-[0.8125rem] text-[var(--text-secondary)]">
-                Desktop audio &amp; video extractor powered by Tauri, Rust, and yt-dlp.
+                Multi-platform audio &amp; video extractor (YouTube, TikTok, Facebook, X, Instagram &amp; more) powered by Tauri, Rust, and yt-dlp.
               </p>
             </div>
           </div>

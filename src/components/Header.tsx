@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  ArrowDownToLine,
   ArrowUpCircle,
   Info,
   Loader2,
@@ -8,6 +7,7 @@ import {
   SlidersHorizontal,
   Sun,
 } from 'lucide-react';
+import { AppLogo } from '~components/AppLogo';
 import type { UpdateCheckResult } from '~types/downloader';
 
 export interface HeaderProps {
@@ -38,9 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex h-13 items-center justify-between gap-3 px-5 sm:px-6">
         {/* Wordmark */}
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] text-[var(--accent-text)]">
-            <ArrowDownToLine className="h-4 w-4" strokeWidth={1.75} />
-          </div>
+          <AppLogo className="h-7 w-7" />
           <div className="flex items-baseline gap-2.5">
             <h1 className="truncate text-base font-semibold tracking-[-0.015em] text-[var(--text-primary)]">
               YoutubeDownloader

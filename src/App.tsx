@@ -71,6 +71,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   cornerStyle: 'balanced',
   fontScale: 'md',
   showThumbnails: true,
+  cookiesBrowser: 'none',
 };
 
 function generateJobId(): string {
@@ -304,33 +305,19 @@ export const App: React.FC = () => {
     [settingsLoaded, showToast]
   );
 
-  const handleTypeChange = useCallback(
-    (defaultType: MediaType) => {
-      void updateAndPersistSettings((prev) => ({
-        ...prev,
-        defaultType,
-        defaultFormat:
-          defaultType === 'video' ? prev.defaultVideoFormat : prev.defaultAudioFormat,
-      }));
-    },
-    [updateAndPersistSettings]
-  );
-
   const handleFormatChange = useCallback(
     (format: MediaFormat) => {
       void updateAndPersistSettings((prev) =>
         isVideoFormat(format)
           ? {
               ...prev,
-              defaultType: 'video',
               defaultVideoFormat: format,
-              defaultFormat: format,
+              defaultFormat: prev.defaultType === 'video' ? format : prev.defaultFormat,
             }
           : {
               ...prev,
-              defaultType: 'audio',
               defaultAudioFormat: format,
-              defaultFormat: format,
+              defaultFormat: prev.defaultType === 'audio' ? format : prev.defaultFormat,
             }
       );
     },
@@ -476,21 +463,28 @@ export const App: React.FC = () => {
   );
 
   const enqueueUrl = useCallback(
-    async (rawUrl: string, startImmediately: boolean): Promise<boolean> => {
+    async (
+      rawUrl: string,
+      startImmediately: boolean,
+      mediaTypeOverride?: MediaType
+    ): Promise<boolean> => {
       try {
         const validatedUrl = await validateUrl(rawUrl);
         const currentSettings = settingsRef.current;
+        const effectiveType = mediaTypeOverride ?? currentSettings.defaultType;
         const jobId = generateJobId();
         const activeFormat =
-          currentSettings.defaultType === 'video'
+          effectiveType === 'video'
             ? currentSettings.defaultVideoFormat
             : currentSettings.defaultAudioFormat;
         const activeResolution =
-          currentSettings.defaultType === 'video'
+          effectiveType === 'video'
             ? currentSettings.defaultVideoResolution
             : undefined;
         const effectiveEmbedThumbnail =
-          currentSettings.embedThumbnail && supportsCoverArt(activeFormat);
+          effectiveType === 'audio' &&
+          currentSettings.embedThumbnail &&
+          supportsCoverArt(activeFormat);
 
         const newItem: QueueItem = {
           jobId,
@@ -704,8 +698,7 @@ export const App: React.FC = () => {
       {/* Edge-to-Edge Workbench Body */}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <ControlPanel
-          selectedType={settings.defaultType}
-          onTypeChange={handleTypeChange}
+          defaultType={settings.defaultType}
           selectedAudioFormat={settings.defaultAudioFormat}
           selectedVideoFormat={settings.defaultVideoFormat}
           onFormatChange={handleFormatChange}
@@ -716,8 +709,8 @@ export const App: React.FC = () => {
           outputDir={settings.outputDir}
           onChangeOutputDir={() => void handleChangeOutputDir()}
           onOpenOutputDir={() => void handleOpenOutputDir()}
-          onDownloadSingle={(url) => enqueueUrl(url, true)}
-          onAddToQueue={(url) => enqueueUrl(url, false)}
+          onDownloadMedia={(url, mediaType) => enqueueUrl(url, true, mediaType)}
+          onAddToQueue={(url, mediaType) => enqueueUrl(url, false, mediaType)}
           validateUrlFn={validateUrl}
           binaryReady={ytDlpReady}
         />

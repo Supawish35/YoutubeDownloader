@@ -124,6 +124,42 @@ pub enum DownloadStatus {
     Cancelled,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowserCookies {
+    None,
+    Chrome,
+    Firefox,
+    Brave,
+    Edge,
+    Chromium,
+    Opera,
+    Vivaldi,
+    Safari,
+}
+
+impl Default for BrowserCookies {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl BrowserCookies {
+    pub fn as_yt_dlp_arg(&self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Chrome => Some("chrome"),
+            Self::Firefox => Some("firefox"),
+            Self::Brave => Some("brave"),
+            Self::Edge => Some("edge"),
+            Self::Chromium => Some("chromium"),
+            Self::Opera => Some("opera"),
+            Self::Vivaldi => Some("vivaldi"),
+            Self::Safari => Some("safari"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoMetadata {
@@ -133,6 +169,8 @@ pub struct VideoMetadata {
     pub channel: String,
     pub duration_secs: Option<u64>,
     pub thumbnail_url: Option<String>,
+    #[serde(default)]
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -261,6 +299,8 @@ pub struct AppSettings {
     pub font_scale: FontScale,
     #[serde(default = "default_show_thumbnails")]
     pub show_thumbnails: bool,
+    #[serde(default)]
+    pub cookies_browser: BrowserCookies,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

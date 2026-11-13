@@ -12,6 +12,7 @@ import type {
   VideoResolution,
 } from '~types/downloader';
 import { getMediaTypeForFormat, isAudioFormat, isVideoFormat } from '@/lib/mediaFormats';
+import { detectMediaSource } from '@/lib/mediaSources';
 
 const PREVIEW_SETTINGS_KEY = 'ytd_preview_settings';
 
@@ -31,6 +32,7 @@ const DEFAULT_PREVIEW_SETTINGS: AppSettings = {
   cornerStyle: 'balanced',
   fontScale: 'md',
   showThumbnails: true,
+  cookiesBrowser: 'none',
 };
 
 let previewBinaryState: BinaryStatus = {
@@ -79,10 +81,13 @@ function loadPreviewSettings(): AppSettings {
   return { ...DEFAULT_PREVIEW_SETTINGS };
 }
 
-function validateYoutubeUrlLocal(rawUrl: string): string {
+function validateMediaUrlLocal(rawUrl: string): string {
   const trimmed = rawUrl.trim();
   if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
     throw new Error('URL must start with http:// or https://');
+  }
+  if (/\s/.test(trimmed)) {
+    throw new Error('URL cannot contain whitespace');
   }
   let parsed: URL;
   try {
@@ -91,15 +96,14 @@ function validateYoutubeUrlLocal(rawUrl: string): string {
     throw new Error('Invalid URL format');
   }
   const host = parsed.hostname.toLowerCase();
-  const validHosts = [
-    'youtube.com',
-    'www.youtube.com',
-    'm.youtube.com',
-    'music.youtube.com',
-    'youtu.be',
-  ];
-  if (!validHosts.includes(host)) {
-    throw new Error(`Invalid YouTube host: ${host}`);
+  if (
+    !host ||
+    !host.includes('.') ||
+    host.startsWith('.') ||
+    host.endsWith('.') ||
+    host.includes('..')
+  ) {
+    throw new Error(`Invalid media URL host: ${host}`);
   }
   return trimmed;
 }
@@ -113,9 +117,9 @@ function extractPreviewVideoId(url: string): string {
     const vParam = parsed.searchParams.get('v');
     if (vParam) return vParam;
     const parts = parsed.pathname.split('/').filter(Boolean);
-    return parts[parts.length - 1] || 'dQw4w9WgXcQ';
+    return parts[parts.length - 1] || 'media-item';
   } catch {
-    return 'dQw4w9WgXcQ';
+    return 'media-item';
   }
 }
 
@@ -176,22 +180,25 @@ export async function updateYtDlp(): Promise<BinaryStatus> {
 
 export async function validateUrl(url: string): Promise<string> {
   if (!isTauri()) {
-    return validateYoutubeUrlLocal(url);
+    return validateMediaUrlLocal(url);
   }
   return invoke<string>('validate_url', { url });
 }
 
 export async function fetchVideoInfo(url: string): Promise<VideoMetadata> {
   if (!isTauri()) {
-    const validated = validateYoutubeUrlLocal(url);
+    const validated = validateMediaUrlLocal(url);
     const id = extractPreviewVideoId(validated);
+    const source = detectMediaSource(validated);
     return {
       id,
       url: validated,
-      title: `Preview Video (${id})`,
-      channel: 'YouTube Preview Channel',
+      title: `Preview ${source} Media (${id})`,
+      channel: `${source} Preview Creator`,
       durationSecs: 215,
-      thumbnailUrl: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      thumbnailUrl:
+        source === 'YouTube' ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null,
+      source,
     };
   }
   return invoke<VideoMetadata>('fetch_video_info', { url });
@@ -208,7 +215,7 @@ export interface StartDownloadParams {
 
 export async function startDownload(params: StartDownloadParams): Promise<void> {
   if (!isTauri()) {
-    const validated = validateYoutubeUrlLocal(params.url);
+    const validated = validateMediaUrlLocal(params.url);
     const id = extractPreviewVideoId(validated);
     const settings = loadPreviewSettings();
     const outDir = (params.outputDir ?? settings.outputDir).replace(/[/\\]+$/, '');

@@ -10,6 +10,7 @@ import {
   Video,
 } from 'lucide-react';
 import { getFormatOption, isVideoFormat, supportsCoverArt } from '@/lib/mediaFormats';
+import { detectMediaSource } from '@/lib/mediaSources';
 import type { QueueItem } from '~types/downloader';
 
 export interface QueueItemCardProps {
@@ -55,10 +56,11 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
     item.status === 'converting';
 
   const durationText = formatDuration(item.metadata?.durationSecs ?? null);
+  const sourceLabel = item.metadata?.source || detectMediaSource(item.url);
   const titleText = item.metadata?.title || item.url;
   const channelText =
     item.metadata?.channel ||
-    (item.status === 'fetchingMeta' ? 'Resolving video details...' : 'YouTube Media');
+    (item.status === 'fetchingMeta' ? 'Resolving media details...' : `${sourceLabel} Media`);
 
   const clampedPercent = Math.min(100, Math.max(0, item.percent));
 
@@ -203,6 +205,12 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
                 {durationText}
               </span>
             )}
+            <span
+              title={`Source: ${sourceLabel}`}
+              className="font-mono-tabular hidden rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-1.5 py-0.5 text-[0.6875rem] font-medium uppercase text-[var(--text-secondary)] sm:inline"
+            >
+              {sourceLabel}
+            </span>
             <span className="font-mono-tabular inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] font-medium text-[var(--text-secondary)]">
               {isVideo ? (
                 <Video className="h-3 w-3 text-[var(--accent-text)]" strokeWidth={1.75} />

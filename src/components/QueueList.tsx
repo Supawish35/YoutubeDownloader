@@ -196,7 +196,7 @@ export const QueueList: React.FC<QueueListProps> = ({
           <p className="mt-1.5 max-w-md text-[0.8125rem] leading-relaxed text-[var(--text-muted)]">
             {items.length === 0 ? (
               <>
-                Paste a YouTube URL above. Press{' '}
+                Paste a YouTube, TikTok, Facebook, X, Instagram, or media URL above. Press{' '}
                 <kbd className="font-mono-tabular rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] text-[var(--text-secondary)]">
                   Enter
                 </kbd>{' '}
