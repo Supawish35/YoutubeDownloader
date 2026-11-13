@@ -6,6 +6,7 @@ import type {
   AppSettings,
   BinaryStatus,
   MediaFormat,
+  PlaylistMetadata,
   ProgressPayload,
   UpdateCheckResult,
   VideoMetadata,
@@ -33,6 +34,7 @@ const DEFAULT_PREVIEW_SETTINGS: AppSettings = {
   fontScale: 'md',
   showThumbnails: true,
   cookiesBrowser: 'none',
+  filenameTemplate: 'titleId',
 };
 
 let previewBinaryState: BinaryStatus = {
@@ -204,6 +206,46 @@ export async function fetchVideoInfo(url: string): Promise<VideoMetadata> {
   return invoke<VideoMetadata>('fetch_video_info', { url });
 }
 
+export async function fetchPlaylistInfo(url: string): Promise<PlaylistMetadata> {
+  if (!isTauri()) {
+    const validated = validateMediaUrlLocal(url);
+    const id = extractPreviewVideoId(validated);
+    const source = detectMediaSource(validated);
+    const thumb =
+      source === 'YouTube' ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null;
+    return {
+      title: `Preview ${source} Playlist (${id})`,
+      entries: [
+        {
+          id: `${id}-1`,
+          url: validated,
+          title: `Preview Track 01 — ${source} Session`,
+          channel: `${source} Preview Creator`,
+          durationSecs: 198,
+          thumbnailUrl: thumb,
+        },
+        {
+          id: `${id}-2`,
+          url: validated,
+          title: `Preview Track 02 — ${source} Deep Dive`,
+          channel: `${source} Preview Creator`,
+          durationSecs: 312,
+          thumbnailUrl: thumb,
+        },
+        {
+          id: `${id}-3`,
+          url: validated,
+          title: `Preview Track 03 — ${source} Encore`,
+          channel: `${source} Preview Creator`,
+          durationSecs: 245,
+          thumbnailUrl: thumb,
+        },
+      ],
+    };
+  }
+  return invoke<PlaylistMetadata>('fetch_playlist_info', { url });
+}
+
 export interface StartDownloadParams {
   jobId: string;
   url: string;
@@ -211,6 +253,9 @@ export interface StartDownloadParams {
   resolution?: VideoResolution;
   embedThumbnail?: boolean;
   outputDir?: string;
+  clipStart?: string;
+  clipEnd?: string;
+  embedSubs?: boolean;
 }
 
 export async function startDownload(params: StartDownloadParams): Promise<void> {
@@ -292,6 +337,9 @@ export async function startDownload(params: StartDownloadParams): Promise<void> 
     resolution: params.resolution,
     embedThumbnail: params.embedThumbnail,
     outputDir: params.outputDir,
+    clipStart: params.clipStart,
+    clipEnd: params.clipEnd,
+    embedSubs: params.embedSubs,
   });
 }
 

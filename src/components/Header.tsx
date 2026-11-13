@@ -106,9 +106,10 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenSettings}
             title="Appearance & Settings (Ctrl+,)"
             aria-label="Appearance & Settings"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-transparent text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-transparent px-2.5 text-xs font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
           >
             <SlidersHorizontal className="h-4 w-4" strokeWidth={1.5} />
+            <span className="hidden sm:inline">Settings</span>
           </button>
 
           <button

@@ -16,6 +16,7 @@ import {
 import PrecisionSelect from '~components/PrecisionSelect';
 import {
   AUDIO_FORMAT_OPTIONS,
+  FILENAME_TEMPLATE_OPTIONS,
   getFormatOption,
   VIDEO_FORMAT_OPTIONS,
   VIDEO_RESOLUTION_OPTIONS,
@@ -27,6 +28,7 @@ import type {
   AudioFormat,
   BrowserCookies,
   CornerStyle,
+  FilenameTemplate,
   FontScale,
   MediaType,
   ThemeMode,
@@ -42,6 +44,7 @@ export interface SettingsModalProps {
   onUpdateSettings: (updater: (prev: AppSettings) => AppSettings) => void;
   onResetDefaults: () => void;
   onChangeOutputDir: () => void;
+  initialTab?: 'appearance' | 'downloads';
 }
 
 type SettingsTab = 'appearance' | 'downloads';
@@ -172,8 +175,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSettings,
   onResetDefaults,
   onChangeOutputDir,
+  initialTab,
 }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'appearance');
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -830,6 +840,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <span>Choose Folder</span>
                   </button>
                 </div>
+              </div>
+
+              {/* Output Filename Template */}
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-canvas)] px-4 py-3.5">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[0.8125rem] font-medium text-[var(--text-primary)]">
+                    Filename Template
+                  </div>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Naming pattern used for downloaded audio and video files.
+                  </p>
+                </div>
+                <PrecisionSelect<FilenameTemplate>
+                  value={settings.filenameTemplate ?? 'titleId'}
+                  options={FILENAME_TEMPLATE_OPTIONS}
+                  onChange={(filenameTemplate) =>
+                    onUpdateSettings((prev) => ({
+                      ...prev,
+                      filenameTemplate,
+                    }))
+                  }
+                  ariaLabel="Filename template"
+                  triggerClassName="min-w-[12rem]"
+                  menuClassName="min-w-[16rem]"
+                  align="right"
+                />
               </div>
 
               {/* Browser Cookies for Authenticated Sources */}

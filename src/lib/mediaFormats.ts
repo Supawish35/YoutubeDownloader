@@ -1,5 +1,6 @@
 import type {
   AudioFormat,
+  FilenameTemplate,
   MediaFormat,
   MediaType,
   VideoFormat,
@@ -33,6 +34,111 @@ export const VIDEO_RESOLUTION_OPTIONS: FormatOption<VideoResolution>[] = [
   { value: '720p', label: '720p', badge: '720P', hint: 'HD balanced' },
   { value: '480p', label: '480p', badge: '480P', hint: 'SD compact size' },
 ];
+
+export const FILENAME_TEMPLATE_OPTIONS: FormatOption<FilenameTemplate>[] = [
+  { value: 'titleId', label: 'Title [ID]', badge: 'TITLE [ID]', hint: 'Title [id].ext' },
+  { value: 'titleOnly', label: 'Title Only', badge: 'TITLE', hint: 'Title.ext' },
+  { value: 'channelTitle', label: 'Channel - Title', badge: 'CH - TITLE', hint: 'Channel - Title.ext' },
+];
+
+export type PresetId =
+  | 'custom'
+  | 'video-best'
+  | 'video-1080p'
+  | 'video-720p'
+  | 'audio-mp3'
+  | 'audio-flac';
+
+export interface QuickPreset {
+  id: Exclude<PresetId, 'custom'>;
+  label: string;
+  badge: string;
+  hint: string;
+  mode: MediaType;
+  videoFormat?: VideoFormat;
+  resolution?: VideoResolution;
+  audioFormat?: AudioFormat;
+  embedThumbnail?: boolean;
+}
+
+export const QUICK_PRESETS: QuickPreset[] = [
+  {
+    id: 'video-best',
+    label: 'Best Video',
+    badge: 'BEST MP4',
+    hint: 'Highest quality MP4',
+    mode: 'video',
+    videoFormat: 'mp4',
+    resolution: 'best',
+  },
+  {
+    id: 'video-1080p',
+    label: '1080p MP4',
+    badge: '1080P',
+    hint: 'Full HD MP4 video',
+    mode: 'video',
+    videoFormat: 'mp4',
+    resolution: '1080p',
+  },
+  {
+    id: 'video-720p',
+    label: '720p MP4',
+    badge: '720P',
+    hint: 'Balanced HD MP4',
+    mode: 'video',
+    videoFormat: 'mp4',
+    resolution: '720p',
+  },
+  {
+    id: 'audio-mp3',
+    label: 'MP3 + Cover',
+    badge: 'MP3',
+    hint: 'MP3 with embedded cover art',
+    mode: 'audio',
+    audioFormat: 'mp3',
+    embedThumbnail: true,
+  },
+  {
+    id: 'audio-flac',
+    label: 'Lossless FLAC',
+    badge: 'FLAC',
+    hint: 'FLAC with embedded cover art',
+    mode: 'audio',
+    audioFormat: 'flac',
+    embedThumbnail: true,
+  },
+];
+
+export const PRESET_OPTIONS: FormatOption<PresetId>[] = [
+  { value: 'custom', label: 'Custom', badge: 'CUSTOM', hint: 'Manual format settings' },
+  ...QUICK_PRESETS.map((preset) => ({
+    value: preset.id,
+    label: preset.label,
+    badge: preset.badge,
+    hint: preset.hint,
+  })),
+];
+
+export function resolveActivePresetId(
+  mode: MediaType,
+  videoFormat: VideoFormat,
+  resolution: VideoResolution,
+  audioFormat: AudioFormat,
+  embedThumbnail: boolean
+): PresetId {
+  const matched = QUICK_PRESETS.find((preset) => {
+    if (preset.mode !== mode) return false;
+    if (preset.embedThumbnail !== undefined && preset.embedThumbnail !== embedThumbnail) {
+      return false;
+    }
+    if (mode === 'video') {
+      return preset.videoFormat === videoFormat && preset.resolution === resolution;
+    }
+    return preset.audioFormat === audioFormat;
+  });
+
+  return matched?.id ?? 'custom';
+}
 
 const AUDIO_FORMAT_SET = new Set<string>(AUDIO_FORMAT_OPTIONS.map((o) => o.value));
 const VIDEO_FORMAT_SET = new Set<string>(VIDEO_FORMAT_OPTIONS.map((o) => o.value));

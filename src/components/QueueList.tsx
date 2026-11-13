@@ -4,6 +4,7 @@ import {
   ListMusic,
   ListVideo,
   Play,
+  RotateCcw,
   Trash2,
 } from 'lucide-react';
 import { QueueItemCard } from '~components/QueueItemCard';
@@ -17,6 +18,10 @@ export interface QueueListProps {
   onCancelItem: (jobId: string) => void;
   onRetryItem: (jobId: string) => void;
   onOpenItemFolder: (item: QueueItem) => void;
+  onOpenItemFile?: (item: QueueItem) => void;
+  onRetryAllFailed?: () => void;
+  onOpenCookiesSettings?: () => void;
+  onUpdateYtDlp?: () => void;
   onRemoveItem: (jobId: string) => void;
   onDownloadAllQueued: () => void;
   onClearCompleted: () => void;
@@ -42,6 +47,10 @@ export const QueueList: React.FC<QueueListProps> = ({
   onCancelItem,
   onRetryItem,
   onOpenItemFolder,
+  onOpenItemFile,
+  onRetryAllFailed,
+  onOpenCookiesSettings,
+  onUpdateYtDlp,
   onRemoveItem,
   onDownloadAllQueued,
   onClearCompleted,
@@ -152,6 +161,17 @@ export const QueueList: React.FC<QueueListProps> = ({
             </button>
           )}
 
+          {counts.failed > 0 && onRetryAllFailed && (
+            <button
+              type="button"
+              onClick={onRetryAllFailed}
+              className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-transparent px-3 text-xs font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+            >
+              <RotateCcw className="h-3.5 w-3.5 text-[var(--status-err)]" strokeWidth={1.75} />
+              <span>Retry Failed ({counts.failed})</span>
+            </button>
+          )}
+
           {counts.completed > 0 && (
             <button
               type="button"
@@ -222,6 +242,9 @@ export const QueueList: React.FC<QueueListProps> = ({
               onCancel={onCancelItem}
               onRetry={onRetryItem}
               onOpenFolder={onOpenItemFolder}
+              onOpenFile={onOpenItemFile}
+              onOpenCookiesSettings={onOpenCookiesSettings}
+              onUpdateYtDlp={onUpdateYtDlp}
               onRemove={onRemoveItem}
             />
           ))}

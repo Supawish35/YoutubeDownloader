@@ -9,9 +9,10 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::RwLock;
 
-use crate::downloader::DownloadManager;
+use crate::downloader::{DownloadManager, DownloadOptions};
 use crate::models::{
-    AppSettings, BinaryStatus, MediaFormat, UpdateCheckResult, VideoMetadata, VideoResolution,
+    AppSettings, BinaryStatus, MediaFormat, PlaylistMetadata, UpdateCheckResult, VideoMetadata,
+    VideoResolution,
 };
 
 pub struct AppState {
@@ -63,27 +64,38 @@ fn validate_url(url: String) -> Result<String, String> {
     downloader::validate_media_url(&url)
 }
 
-#[tauri::command]
-async fn fetch_video_info(
-    state: State<'_, AppState>,
-    url: String,
-) -> Result<VideoMetadata, String> {
+async fn resolve_yt_dlp_and_cookies(
+    state: &State<'_, AppState>,
+) -> Result<(String, Option<String>), String> {
     let binary_status = binaries::check_binaries_status(&state.app_data_dir).await;
-    let yt_dlp_bin = match binary_status.yt_dlp_path {
-        Some(p) => p,
-        None => {
-            return Err(
-                "yt-dlp is not installed or available. Please download it first.".to_string(),
-            )
-        }
-    };
+    let yt_dlp_bin = binary_status.yt_dlp_path.ok_or_else(|| {
+        "yt-dlp is not installed or available. Please download it first.".to_string()
+    })?;
 
     let cookies_browser = {
         let settings = state.settings.read().await;
         settings.cookies_browser.as_yt_dlp_arg().map(str::to_string)
     };
 
+    Ok((yt_dlp_bin, cookies_browser))
+}
+
+#[tauri::command]
+async fn fetch_video_info(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<VideoMetadata, String> {
+    let (yt_dlp_bin, cookies_browser) = resolve_yt_dlp_and_cookies(&state).await?;
     downloader::fetch_metadata(&yt_dlp_bin, &url, cookies_browser.as_deref()).await
+}
+
+#[tauri::command]
+async fn fetch_playlist_info(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<PlaylistMetadata, String> {
+    let (yt_dlp_bin, cookies_browser) = resolve_yt_dlp_and_cookies(&state).await?;
+    downloader::fetch_playlist_metadata(&yt_dlp_bin, &url, cookies_browser.as_deref()).await
 }
 
 #[tauri::command]
@@ -96,6 +108,9 @@ async fn start_download(
     resolution: Option<VideoResolution>,
     embed_thumbnail: Option<bool>,
     output_dir: Option<String>,
+    clip_start: Option<String>,
+    clip_end: Option<String>,
+    embed_subs: Option<bool>,
 ) -> Result<(), String> {
     let validated_url = downloader::validate_media_url(&url)?;
     let binary_status = binaries::check_binaries_status(&state.app_data_dir).await;
@@ -113,6 +128,12 @@ async fn start_download(
     let final_embed = embed_thumbnail.unwrap_or(settings.embed_thumbnail);
     let final_output = output_dir.unwrap_or_else(|| settings.output_dir.clone());
     let cookies_browser = settings.cookies_browser.as_yt_dlp_arg().map(str::to_string);
+    let options = DownloadOptions {
+        filename_template: settings.filename_template,
+        clip_start,
+        clip_end,
+        embed_subs: embed_subs.unwrap_or(false),
+    };
     let ffmpeg_path = binary_status.ffmpeg_path;
 
     state.download_manager.start_job(
@@ -126,6 +147,7 @@ async fn start_download(
         yt_dlp_bin,
         ffmpeg_path,
         cookies_browser,
+        options,
     );
 
     Ok(())
@@ -172,6 +194,7 @@ pub fn run() {
             update_yt_dlp,
             validate_url,
             fetch_video_info,
+            fetch_playlist_info,
             start_download,
             cancel_download,
             check_app_update,

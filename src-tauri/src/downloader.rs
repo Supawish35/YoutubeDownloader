@@ -5,8 +5,17 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{watch, Mutex, Semaphore};
 
 use crate::models::{
-    DownloadStatus, MediaFormat, ProgressPayload, VideoMetadata, VideoResolution,
+    DownloadStatus, FilenameTemplate, MediaFormat, PlaylistEntry, PlaylistMetadata,
+    ProgressPayload, VideoMetadata, VideoResolution,
 };
+
+#[derive(Debug, Clone, Default)]
+pub struct DownloadOptions {
+    pub filename_template: FilenameTemplate,
+    pub clip_start: Option<String>,
+    pub clip_end: Option<String>,
+    pub embed_subs: bool,
+}
 
 fn extract_clean_host(trimmed: &str) -> Result<String, String> {
     if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
@@ -157,6 +166,28 @@ pub fn build_yt_dlp_args(
     ffmpeg_path: Option<&str>,
     cookies_browser: Option<&str>,
 ) -> Vec<String> {
+    build_yt_dlp_args_with_options(
+        url,
+        format,
+        resolution,
+        embed_thumbnail,
+        output_dir,
+        ffmpeg_path,
+        cookies_browser,
+        &DownloadOptions::default(),
+    )
+}
+
+pub fn build_yt_dlp_args_with_options(
+    url: &str,
+    format: &MediaFormat,
+    resolution: VideoResolution,
+    embed_thumbnail: bool,
+    output_dir: &str,
+    ffmpeg_path: Option<&str>,
+    cookies_browser: Option<&str>,
+    options: &DownloadOptions,
+) -> Vec<String> {
     let mut args = vec![
         "--no-playlist".to_string(),
         "--newline".to_string(),
@@ -199,9 +230,33 @@ pub fn build_yt_dlp_args(
         args.push("jpg".to_string());
     }
 
+    if options.embed_subs && format.is_video() {
+        args.push("--embed-subs".to_string());
+        args.push("--sub-langs".to_string());
+        args.push("en.*,all,-live_chat".to_string());
+    }
+
+    let clip_start = options
+        .clip_start
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let clip_end = options
+        .clip_end
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if clip_start.is_some() || clip_end.is_some() {
+        let start = clip_start.unwrap_or("0:00");
+        let end = clip_end.unwrap_or("inf");
+        args.push("--download-sections".to_string());
+        args.push(format!("*{start}-{end}"));
+    }
+
     let clean_out = output_dir.trim_end_matches(['/', '\\']);
+    let pattern = options.filename_template.as_yt_dlp_pattern();
     args.push("-o".to_string());
-    args.push(format!("{clean_out}/%(title).150B [%(id)s].%(ext)s"));
+    args.push(format!("{clean_out}/{pattern}"));
 
     args.push(url.to_string());
 
@@ -311,6 +366,149 @@ pub async fn fetch_metadata(
     })
 }
 
+pub fn parse_playlist_json(raw_json: &[u8], fallback_url: &str) -> Result<PlaylistMetadata, String> {
+    let val: serde_json::Value =
+        serde_json::from_slice(raw_json).map_err(|e| format!("Failed to parse playlist JSON: {e}"))?;
+
+    let playlist_title = val
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Playlist")
+        .to_string();
+
+    let playlist_channel = val
+        .get("uploader")
+        .or_else(|| val.get("channel"))
+        .or_else(|| val.get("uploader_id"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let raw_entries: Vec<&serde_json::Value> = match val.get("entries").and_then(|v| v.as_array()) {
+        Some(arr) => arr.iter().collect(),
+        None => vec![&val],
+    };
+
+    let mut entries = Vec::new();
+    for entry in raw_entries {
+        if entry.is_null() {
+            continue;
+        }
+
+        let id = entry
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .unwrap_or("")
+            .to_string();
+
+        let http_url = entry
+            .get("webpage_url")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| s.starts_with("http"))
+            .or_else(|| {
+                entry
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| s.starts_with("http"))
+            });
+
+        let entry_url = match http_url {
+            Some(u) => u.to_string(),
+            None if !id.is_empty() => format!("https://www.youtube.com/watch?v={id}"),
+            None => fallback_url.to_string(),
+        };
+
+        let title = entry
+            .get("title")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Untitled Media")
+            .to_string();
+
+        let channel = entry
+            .get("uploader")
+            .or_else(|| entry.get("channel"))
+            .or_else(|| entry.get("creator"))
+            .or_else(|| entry.get("uploader_id"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .or(playlist_channel)
+            .map(str::to_string)
+            .unwrap_or_else(|| detect_source_label(&entry_url));
+
+        let duration_secs = entry.get("duration").and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_f64().filter(|f| *f >= 0.0).map(|f| f.round() as u64))
+        });
+
+        let thumbnail_url = entry
+            .get("thumbnail")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                entry
+                    .get("thumbnails")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.last())
+                    .and_then(|t| t.get("url"))
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            });
+
+        entries.push(PlaylistEntry {
+            id,
+            url: entry_url,
+            title,
+            channel,
+            duration_secs,
+            thumbnail_url,
+        });
+    }
+
+    Ok(PlaylistMetadata {
+        title: playlist_title,
+        entries,
+    })
+}
+
+pub async fn fetch_playlist_metadata(
+    yt_dlp_bin: &str,
+    url: &str,
+    cookies_browser: Option<&str>,
+) -> Result<PlaylistMetadata, String> {
+    let validated_url = validate_media_url(url)?;
+
+    let mut cmd = tokio::process::Command::new(yt_dlp_bin);
+    cmd.args(["--flat-playlist", "--dump-single-json", "--no-warnings"]);
+    if let Some(browser) = cookies_browser.map(str::trim).filter(|b| !b.is_empty()) {
+        cmd.args(["--cookies-from-browser", browser]);
+    }
+    cmd.arg(&validated_url);
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run yt-dlp: {e}"))?;
+
+    if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp playlist fetch failed: {err_msg}"));
+    }
+
+    parse_playlist_json(&output.stdout, &validated_url)
+}
+
 #[derive(Clone)]
 pub struct DownloadManager {
     semaphore: Arc<Semaphore>,
@@ -337,6 +535,7 @@ impl DownloadManager {
         yt_dlp_bin: String,
         ffmpeg_path: Option<String>,
         cookies_browser: Option<String>,
+        options: DownloadOptions,
     ) {
         let sem = Arc::clone(&self.semaphore);
         let cancellations = Arc::clone(&self.active_cancellations);
@@ -393,7 +592,7 @@ impl DownloadManager {
 
             emit_progress(DownloadStatus::FetchingMeta, 0.0, None, None, None, None);
 
-            let args = build_yt_dlp_args(
+            let args = build_yt_dlp_args_with_options(
                 &url,
                 &format,
                 resolution,
@@ -401,6 +600,7 @@ impl DownloadManager {
                 &output_dir,
                 ffmpeg_path.as_deref(),
                 cookies_browser.as_deref(),
+                &options,
             );
 
             let mut cmd = tokio::process::Command::new(&yt_dlp_bin);
@@ -731,5 +931,136 @@ mod tests {
 
         let line_invalid = "some random log line without marker";
         assert_eq!(parse_progress_line(line_invalid), None);
+    }
+
+    #[test]
+    fn test_build_yt_dlp_args_with_options_clip_subs_and_template() {
+        let url = "https://www.youtube.com/watch?v=abc123";
+        let out_dir = "/tmp/out/";
+
+        let opts = DownloadOptions {
+            filename_template: FilenameTemplate::ChannelTitle,
+            clip_start: Some(" 00:15 ".to_string()),
+            clip_end: Some(" 01:45 ".to_string()),
+            embed_subs: true,
+        };
+        let video_args = build_yt_dlp_args_with_options(
+            url,
+            &MediaFormat::Mp4,
+            VideoResolution::P1080,
+            false,
+            out_dir,
+            None,
+            None,
+            &opts,
+        );
+        assert!(video_args.contains(&"--embed-subs".to_string()));
+        assert!(video_args.contains(&"--sub-langs".to_string()));
+        assert!(video_args.contains(&"en.*,all,-live_chat".to_string()));
+        assert!(video_args.contains(&"--download-sections".to_string()));
+        assert!(video_args.contains(&"*00:15-01:45".to_string()));
+        assert!(video_args.contains(&"/tmp/out/%(uploader)s - %(title).150B.%(ext)s".to_string()));
+
+        // Partial clip bounds should default start to 0:00 and end to inf, and audio ignores embed_subs
+        let audio_opts = DownloadOptions {
+            filename_template: FilenameTemplate::TitleOnly,
+            clip_start: Some("01:00".to_string()),
+            clip_end: Some("   ".to_string()),
+            embed_subs: true,
+        };
+        let audio_args = build_yt_dlp_args_with_options(
+            url,
+            &MediaFormat::Mp3,
+            VideoResolution::Best,
+            true,
+            out_dir,
+            None,
+            None,
+            &audio_opts,
+        );
+        assert!(!audio_args.contains(&"--embed-subs".to_string()));
+        assert!(audio_args.contains(&"*01:00-inf".to_string()));
+        assert!(audio_args.contains(&"/tmp/out/%(title).150B.%(ext)s".to_string()));
+
+        let end_only_opts = DownloadOptions {
+            filename_template: FilenameTemplate::TitleId,
+            clip_start: None,
+            clip_end: Some("02:00".to_string()),
+            embed_subs: false,
+        };
+        let end_only_args = build_yt_dlp_args_with_options(
+            url,
+            &MediaFormat::Mkv,
+            VideoResolution::Best,
+            false,
+            out_dir,
+            None,
+            None,
+            &end_only_opts,
+        );
+        assert!(end_only_args.contains(&"*0:00-02:00".to_string()));
+        assert!(end_only_args.contains(&"/tmp/out/%(title).150B [%(id)s].%(ext)s".to_string()));
+    }
+
+    #[test]
+    fn test_parse_playlist_json() {
+        let playlist_json = br#"{
+            "title": "My Awesome Mix",
+            "uploader": "Fallback Channel",
+            "entries": [
+                {
+                    "id": "vid1",
+                    "url": "https://www.youtube.com/watch?v=vid1",
+                    "title": "Track One",
+                    "uploader": "Artist One",
+                    "duration": 215.0,
+                    "thumbnail": "https://img.example.com/1.jpg"
+                },
+                {
+                    "id": "vid2",
+                    "url": "vid2",
+                    "title": "Track Two",
+                    "duration": 180,
+                    "thumbnails": [{"url": "https://img.example.com/2.jpg"}]
+                }
+            ]
+        }"#;
+
+        let parsed = parse_playlist_json(playlist_json, "https://www.youtube.com/playlist?list=PL1")
+            .expect("playlist JSON should parse");
+        assert_eq!(parsed.title, "My Awesome Mix");
+        assert_eq!(parsed.entries.len(), 2);
+        assert_eq!(parsed.entries[0].url, "https://www.youtube.com/watch?v=vid1");
+        assert_eq!(parsed.entries[0].channel, "Artist One");
+        assert_eq!(parsed.entries[0].duration_secs, Some(215));
+        assert_eq!(
+            parsed.entries[0].thumbnail_url.as_deref(),
+            Some("https://img.example.com/1.jpg")
+        );
+
+        assert_eq!(parsed.entries[1].url, "https://www.youtube.com/watch?v=vid2");
+        assert_eq!(parsed.entries[1].channel, "Fallback Channel");
+        assert_eq!(parsed.entries[1].duration_secs, Some(180));
+        assert_eq!(
+            parsed.entries[1].thumbnail_url.as_deref(),
+            Some("https://img.example.com/2.jpg")
+        );
+
+        // Single video JSON without entries wraps into a 1-item entries vec
+        let single_json = br#"{
+            "id": "single99",
+            "webpage_url": "https://vimeo.com/999",
+            "title": "Solo Clip",
+            "uploader": "Creator",
+            "duration": 42
+        }"#;
+        let single = parse_playlist_json(single_json, "https://vimeo.com/999")
+            .expect("single video JSON should parse");
+        assert_eq!(single.title, "Solo Clip");
+        assert_eq!(single.entries.len(), 1);
+        assert_eq!(single.entries[0].id, "single99");
+        assert_eq!(single.entries[0].url, "https://vimeo.com/999");
+        assert_eq!(single.entries[0].channel, "Creator");
+        assert_eq!(single.entries[0].duration_secs, Some(42));
     }
 }

@@ -2,8 +2,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::models::{
-    AccentColor, AppSettings, BrowserCookies, CornerStyle, FontScale, MediaFormat, MediaType,
-    ThemeMode, UiDensity, VideoResolution,
+    AccentColor, AppSettings, BrowserCookies, CornerStyle, FilenameTemplate, FontScale,
+    MediaFormat, MediaType, ThemeMode, UiDensity, VideoResolution,
 };
 
 impl Default for AppSettings {
@@ -31,6 +31,7 @@ impl Default for AppSettings {
             font_scale: FontScale::Md,
             show_thumbnails: true,
             cookies_browser: BrowserCookies::None,
+            filename_template: FilenameTemplate::TitleId,
         }
     }
 }
@@ -112,6 +113,7 @@ mod tests {
         assert_eq!(settings.font_scale, FontScale::Md);
         assert!(settings.show_thumbnails);
         assert_eq!(settings.cookies_browser, BrowserCookies::None);
+        assert_eq!(settings.filename_template, FilenameTemplate::TitleId);
     }
 
     #[test]
@@ -133,6 +135,7 @@ mod tests {
             font_scale: FontScale::Xl,
             show_thumbnails: false,
             cookies_browser: BrowserCookies::Firefox,
+            filename_template: FilenameTemplate::ChannelTitle,
         };
 
         let json = serde_json::to_string(&settings).expect("serialization should succeed");
@@ -152,6 +155,7 @@ mod tests {
         assert!(json.contains("\"fontScale\":\"xl\""));
         assert!(json.contains("\"showThumbnails\":false"));
         assert!(json.contains("\"cookiesBrowser\":\"firefox\""));
+        assert!(json.contains("\"filenameTemplate\":\"channelTitle\""));
 
         let deserialized: AppSettings =
             serde_json::from_str(&json).expect("deserialization should succeed");
@@ -208,6 +212,7 @@ mod tests {
             font_scale: FontScale::Xs,
             show_thumbnails: false,
             cookies_browser: BrowserCookies::Chrome,
+            filename_template: FilenameTemplate::TitleOnly,
         };
 
         let save_res = save_settings_to_disk(&temp_dir, &custom_settings);

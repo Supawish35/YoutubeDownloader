@@ -18,6 +18,7 @@ import {
   cancelDownload,
   checkAppUpdate,
   checkBinaries,
+  fetchPlaylistInfo,
   fetchVideoInfo,
   getSettings,
   onBinaryStatus,
@@ -35,11 +36,14 @@ import { isVideoFormat, supportsCoverArt } from '@/lib/mediaFormats';
 import type {
   AppSettings,
   BinaryStatus,
+  DownloadItemOptions,
   MediaFormat,
   MediaType,
+  PlaylistEntry,
   QueueFilter,
   QueueItem,
   UpdateCheckResult,
+  VideoMetadata,
   VideoResolution,
 } from '~types/downloader';
 
@@ -72,6 +76,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   fontScale: 'md',
   showThumbnails: true,
   cookiesBrowser: 'none',
+  filenameTemplate: 'titleId',
 };
 
 function generateJobId(): string {
@@ -104,6 +109,9 @@ export const App: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<QueueFilter>('all');
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'appearance' | 'downloads'>(
+    'appearance'
+  );
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [toast, setToast] = useState<ToastNotification | null>(null);
@@ -117,6 +125,9 @@ export const App: React.FC = () => {
   const toastTimerRef = useRef<number | null>(null);
   const settingsRef = useRef<AppSettings>(settings);
   settingsRef.current = settings;
+  const queueRef = useRef<QueueItem[]>(queue);
+  queueRef.current = queue;
+  const notifiedCompletedJobsRef = useRef<Set<string>>(new Set());
 
   const showToast = useCallback(
     (
@@ -219,6 +230,28 @@ export const App: React.FC = () => {
       try {
         unlistenProgress = await onDownloadProgress((payload) => {
           if (!active) return;
+          if (payload.status === 'completed') {
+            const currentItem = queueRef.current.find((item) => item.jobId === payload.jobId);
+            if (
+              currentItem &&
+              currentItem.status !== 'completed' &&
+              !notifiedCompletedJobsRef.current.has(payload.jobId)
+            ) {
+              notifiedCompletedJobsRef.current.add(payload.jobId);
+              if (typeof window !== 'undefined' && 'Notification' in window) {
+                const body = currentItem.metadata?.title || currentItem.url;
+                if (Notification.permission === 'granted') {
+                  new Notification('Download Complete', { body });
+                } else if (Notification.permission === 'default') {
+                  void Notification.requestPermission().then((permission) => {
+                    if (permission === 'granted') {
+                      new Notification('Download Complete', { body });
+                    }
+                  });
+                }
+              }
+            }
+          }
           setQueue((prev) =>
             prev.map((item) => {
               if (item.jobId !== payload.jobId) return item;
@@ -303,6 +336,18 @@ export const App: React.FC = () => {
       }
     },
     [settingsLoaded, showToast]
+  );
+
+  const handleModeChange = useCallback(
+    (defaultType: MediaType) => {
+      void updateAndPersistSettings((prev) => ({
+        ...prev,
+        defaultType,
+        defaultFormat:
+          defaultType === 'video' ? prev.defaultVideoFormat : prev.defaultAudioFormat,
+      }));
+    },
+    [updateAndPersistSettings]
   );
 
   const handleFormatChange = useCallback(
@@ -466,7 +511,9 @@ export const App: React.FC = () => {
     async (
       rawUrl: string,
       startImmediately: boolean,
-      mediaTypeOverride?: MediaType
+      mediaTypeOverride?: MediaType,
+      prefetchedMetadata?: VideoMetadata | null,
+      options?: DownloadItemOptions
     ): Promise<boolean> => {
       try {
         const validatedUrl = await validateUrl(rawUrl);
@@ -492,30 +539,35 @@ export const App: React.FC = () => {
           format: activeFormat,
           resolution: activeResolution,
           embedThumbnail: effectiveEmbedThumbnail,
+          clipStart: options?.clipStart,
+          clipEnd: options?.clipEnd,
+          embedSubs: options?.embedSubs,
           status: 'queued',
           percent: 0,
           speed: null,
           eta: null,
           outputPath: null,
           error: null,
-          metadata: null,
+          metadata: prefetchedMetadata ?? null,
           addedAt: Date.now(),
         };
 
         setQueue((prev) => [newItem, ...prev]);
 
-        // Fetch rich video metadata asynchronously
-        void fetchVideoInfo(validatedUrl)
-          .then((metadata) => {
-            setQueue((prev) =>
-              prev.map((item) =>
-                item.jobId === jobId ? { ...item, metadata } : item
-              )
-            );
-          })
-          .catch(() => {
-            // Metadata fetch is best-effort; download itself still proceeds
-          });
+        // Fetch rich video metadata asynchronously if not already prefetched
+        if (!prefetchedMetadata) {
+          void fetchVideoInfo(validatedUrl)
+            .then((metadata) => {
+              setQueue((prev) =>
+                prev.map((item) =>
+                  item.jobId === jobId ? { ...item, metadata } : item
+                )
+              );
+            })
+            .catch(() => {
+              // Metadata fetch is best-effort; download itself still proceeds
+            });
+        }
 
         if (startImmediately) {
           await startDownload({
@@ -525,6 +577,9 @@ export const App: React.FC = () => {
             resolution: activeResolution,
             embedThumbnail: effectiveEmbedThumbnail,
             outputDir: currentSettings.outputDir || undefined,
+            clipStart: options?.clipStart,
+            clipEnd: options?.clipEnd,
+            embedSubs: options?.embedSubs,
           });
         } else {
           showToast('info', 'Added to download queue.');
@@ -539,10 +594,55 @@ export const App: React.FC = () => {
     [showToast]
   );
 
+  const handleEnqueuePlaylistEntries = useCallback(
+    async (
+      entries: PlaylistEntry[],
+      mediaType: MediaType,
+      startImmediately: boolean,
+      options?: DownloadItemOptions
+    ) => {
+      if (entries.length === 0) return;
+
+      let enqueuedCount = 0;
+      for (const entry of entries) {
+        const metadata: VideoMetadata = {
+          id: entry.id,
+          url: entry.url,
+          title: entry.title,
+          channel: entry.channel,
+          durationSecs: entry.durationSecs,
+          thumbnailUrl: entry.thumbnailUrl,
+        };
+        const ok = await enqueueUrl(
+          entry.url,
+          startImmediately,
+          mediaType,
+          metadata,
+          options
+        );
+        if (ok) {
+          enqueuedCount += 1;
+        }
+      }
+
+      if (enqueuedCount > 0) {
+        showToast(
+          startImmediately ? 'info' : 'success',
+          startImmediately
+            ? `Started ${enqueuedCount} playlist download${enqueuedCount === 1 ? '' : 's'}.`
+            : `Added ${enqueuedCount} playlist item${enqueuedCount === 1 ? '' : 's'} to queue.`
+        );
+      }
+    },
+    [enqueueUrl, showToast]
+  );
+
   const handleStartItem = useCallback(
     async (jobId: string) => {
       const target = queue.find((item) => item.jobId === jobId);
       if (!target) return;
+
+      notifiedCompletedJobsRef.current.delete(jobId);
 
       setQueue((prev) =>
         prev.map((item) =>
@@ -560,6 +660,9 @@ export const App: React.FC = () => {
           resolution: target.resolution,
           embedThumbnail: target.embedThumbnail,
           outputDir: settingsRef.current.outputDir || undefined,
+          clipStart: target.clipStart,
+          clipEnd: target.clipEnd,
+          embedSubs: target.embedSubs,
         });
       } catch (err) {
         const message = formatErrorMessage(err, 'Failed to start download.');
@@ -629,6 +732,35 @@ export const App: React.FC = () => {
     [showToast]
   );
 
+  const handleOpenItemFile = useCallback(
+    async (item: QueueItem) => {
+      if (!item.outputPath) {
+        showToast('warning', 'Output file path is unavailable.');
+        return;
+      }
+      try {
+        await openOutputDirectory(item.outputPath);
+      } catch (err) {
+        showToast('error', formatErrorMessage(err, 'Failed to open media file.'));
+      }
+    },
+    [showToast]
+  );
+
+  const handleRetryAllFailed = useCallback(async () => {
+    const failedItems = queue.filter(
+      (item) => item.status === 'failed' || item.status === 'cancelled'
+    );
+    for (const item of failedItems) {
+      await handleRetryItem(item.jobId);
+    }
+  }, [handleRetryItem, queue]);
+
+  const handleOpenCookiesSettings = useCallback(() => {
+    setSettingsInitialTab('downloads');
+    setSettingsOpen(true);
+  }, []);
+
   const handleRemoveItem = useCallback(
     async (jobId: string) => {
       const target = queue.find((item) => item.jobId === jobId);
@@ -690,7 +822,10 @@ export const App: React.FC = () => {
         onOpenReleaseUrl={(url) => void handleOpenExternalUrl(url)}
         darkMode={effectiveDarkMode}
         onToggleDarkMode={handleToggleDarkMode}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsInitialTab('appearance');
+          setSettingsOpen(true);
+        }}
         onOpenAbout={() => setAboutOpen(true)}
         hasBinaryWarning={hasBinaryWarning}
       />
@@ -699,6 +834,7 @@ export const App: React.FC = () => {
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <ControlPanel
           defaultType={settings.defaultType}
+          onModeChange={handleModeChange}
           selectedAudioFormat={settings.defaultAudioFormat}
           selectedVideoFormat={settings.defaultVideoFormat}
           onFormatChange={handleFormatChange}
@@ -709,10 +845,18 @@ export const App: React.FC = () => {
           outputDir={settings.outputDir}
           onChangeOutputDir={() => void handleChangeOutputDir()}
           onOpenOutputDir={() => void handleOpenOutputDir()}
-          onDownloadMedia={(url, mediaType) => enqueueUrl(url, true, mediaType)}
-          onAddToQueue={(url, mediaType) => enqueueUrl(url, false, mediaType)}
+          onDownloadMedia={(url, mediaType, prefetchedMeta, options) =>
+            enqueueUrl(url, true, mediaType, prefetchedMeta, options)
+          }
+          onAddToQueue={(url, mediaType, prefetchedMeta, options) =>
+            enqueueUrl(url, false, mediaType, prefetchedMeta, options)
+          }
+          onEnqueuePlaylistEntries={handleEnqueuePlaylistEntries}
           validateUrlFn={validateUrl}
+          fetchPreviewFn={fetchVideoInfo}
+          fetchPlaylistFn={fetchPlaylistInfo}
           binaryReady={ytDlpReady}
+          showThumbnails={settings.showThumbnails}
         />
 
         <SuspenseLoader>
@@ -724,6 +868,10 @@ export const App: React.FC = () => {
             onCancelItem={(jobId) => void handleCancelItem(jobId)}
             onRetryItem={(jobId) => void handleRetryItem(jobId)}
             onOpenItemFolder={(item) => void handleOpenItemFolder(item)}
+            onOpenItemFile={(item) => void handleOpenItemFile(item)}
+            onRetryAllFailed={() => void handleRetryAllFailed()}
+            onOpenCookiesSettings={handleOpenCookiesSettings}
+            onUpdateYtDlp={() => void handleProvisionOrUpdateBinaries()}
             onRemoveItem={(jobId) => void handleRemoveItem(jobId)}
             onDownloadAllQueued={() => void handleDownloadAllQueued()}
             onClearCompleted={handleClearCompleted}
@@ -878,6 +1026,7 @@ export const App: React.FC = () => {
             onUpdateSettings={handleUpdateSettings}
             onResetDefaults={handleResetAppearanceDefaults}
             onChangeOutputDir={() => void handleChangeOutputDir()}
+            initialTab={settingsInitialTab}
           />
         </SuspenseLoader>
       )}

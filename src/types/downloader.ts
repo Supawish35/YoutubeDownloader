@@ -64,6 +64,8 @@ export type CornerStyle = 'balanced' | 'sharp';
 
 export type FontScale = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
+export type FilenameTemplate = 'titleId' | 'titleOnly' | 'channelTitle';
+
 export interface AppSettings {
   outputDir: string;
   defaultFormat: MediaFormat;
@@ -81,6 +83,27 @@ export interface AppSettings {
   fontScale: FontScale;
   showThumbnails: boolean;
   cookiesBrowser: BrowserCookies;
+  filenameTemplate: FilenameTemplate;
+}
+
+export interface DownloadItemOptions {
+  clipStart?: string;
+  clipEnd?: string;
+  embedSubs?: boolean;
+}
+
+export interface PlaylistEntry {
+  id: string;
+  url: string;
+  title: string;
+  channel: string;
+  durationSecs: number | null;
+  thumbnailUrl: string | null;
+}
+
+export interface PlaylistMetadata {
+  title: string;
+  entries: PlaylistEntry[];
 }
 
 export interface BinaryStatus {
@@ -108,6 +131,9 @@ export interface QueueItem {
   format: MediaFormat;
   resolution?: VideoResolution;
   embedThumbnail: boolean;
+  clipStart?: string;
+  clipEnd?: string;
+  embedSubs?: boolean;
   status: DownloadStatus;
   percent: number;
   speed: string | null;

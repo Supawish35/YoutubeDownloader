@@ -1,14 +1,21 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Check,
+  Copy,
   FolderOpen,
+  KeyRound,
   Loader2,
   Music,
   Play,
   RotateCcw,
+  Scissors,
   Square,
+  Subtitles,
   Trash2,
   Video,
+  Wrench,
 } from 'lucide-react';
+import { diagnoseDownloadError } from '@/lib/errorDiagnostics';
 import { getFormatOption, isVideoFormat, supportsCoverArt } from '@/lib/mediaFormats';
 import { detectMediaSource } from '@/lib/mediaSources';
 import type { QueueItem } from '~types/downloader';
@@ -20,6 +27,9 @@ export interface QueueItemCardProps {
   onCancel: (jobId: string) => void;
   onRetry: (jobId: string) => void;
   onOpenFolder: (item: QueueItem) => void;
+  onOpenFile?: (item: QueueItem) => void;
+  onOpenCookiesSettings?: () => void;
+  onUpdateYtDlp?: () => void;
   onRemove: (jobId: string) => void;
 }
 
@@ -43,17 +53,50 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
   onCancel,
   onRetry,
   onOpenFolder,
+  onOpenFile,
+  onOpenCookiesSettings,
+  onUpdateYtDlp,
   onRemove,
 }) => {
   const [thumbFailed, setThumbFailed] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(item.url);
+      setCopiedUrl(true);
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopiedUrl(false);
+        copyTimerRef.current = null;
+      }, 1500);
+    } catch {
+      // Ignore clipboard write errors in restricted environments
+    }
+  };
 
   const isVideo = isVideoFormat(item.format);
   const formatBadge = getFormatOption(item.format).badge;
   const showCoverArtBadge = item.embedThumbnail && supportsCoverArt(item.format);
+  const hasClipRange = Boolean(item.clipStart || item.clipEnd);
+  const showSubsBadge = Boolean(item.embedSubs);
   const isActive =
     item.status === 'fetchingMeta' ||
     item.status === 'downloading' ||
     item.status === 'converting';
+
+  const diagnosis = item.status === 'failed' ? diagnoseDownloadError(item.error) : null;
 
   const durationText = formatDuration(item.metadata?.durationSecs ?? null);
   const sourceLabel = item.metadata?.source || detectMediaSource(item.url);
@@ -151,11 +194,14 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
   };
 
   const secondaryDetail =
-    item.status === 'failed' && item.error
-      ? item.error
+    item.status === 'failed'
+      ? diagnosis?.summary ?? item.error ?? 'Download failed'
       : item.status === 'completed' && item.outputPath
         ? item.outputPath
         : channelText;
+
+  const secondaryTitle =
+    item.status === 'failed' && item.error ? item.error : secondaryDetail;
 
   return (
     <article className="group flex items-center gap-4 bg-[var(--bg-canvas)] px-5 py-[var(--row-py)] transition-colors duration-150 hover:bg-[var(--bg-hover)] sm:px-6">
@@ -230,6 +276,24 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
                 ART
               </span>
             )}
+            {hasClipRange && (
+              <span
+                title={`${item.clipStart || '0:00'} - ${item.clipEnd || 'end'}`}
+                className="font-mono-tabular hidden items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] text-[var(--text-muted)] sm:inline-flex"
+              >
+                <Scissors className="h-3 w-3 text-[var(--accent-text)]" strokeWidth={1.75} />
+                <span>CLIP</span>
+              </span>
+            )}
+            {showSubsBadge && (
+              <span
+                title="Subtitles embedded"
+                className="font-mono-tabular hidden items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] text-[var(--text-muted)] sm:inline-flex"
+              >
+                <Subtitles className="h-3 w-3 text-[var(--accent-text)]" strokeWidth={1.75} />
+                <span>SUBS</span>
+              </span>
+            )}
             <span className="inline-flex w-[4rem] justify-end">
               {renderStatusLabel()}
             </span>
@@ -249,18 +313,44 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
 
         {/* Line 3: Subtitle/Path/Error + Fixed-Width Tabular Telemetry */}
         <div className="flex items-center justify-between gap-3 text-xs">
-          <p
-            className={`min-w-0 flex-1 truncate ${
-              item.status === 'failed' && item.error
-                ? 'font-medium text-[var(--status-err)]'
-                : item.status === 'completed' && item.outputPath
-                  ? 'font-mono-tabular text-[var(--text-muted)]'
-                  : 'text-[var(--text-muted)]'
-            }`}
-            title={secondaryDetail}
-          >
-            {secondaryDetail}
-          </p>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <p
+              className={`min-w-0 truncate ${
+                item.status === 'failed' && item.error
+                  ? 'font-medium text-[var(--status-err)]'
+                  : item.status === 'completed' && item.outputPath
+                    ? 'font-mono-tabular text-[var(--text-muted)]'
+                    : 'text-[var(--text-muted)]'
+              }`}
+              title={secondaryTitle}
+            >
+              {secondaryDetail}
+            </p>
+            {item.status === 'failed' &&
+              diagnosis?.action === 'openCookiesSettings' &&
+              onOpenCookiesSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenCookiesSettings}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-0.5 text-[0.6875rem] font-medium text-[var(--accent-text)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+                >
+                  <KeyRound className="h-3 w-3" strokeWidth={1.75} />
+                  <span>{diagnosis.actionLabel ?? 'Use Cookies'}</span>
+                </button>
+              )}
+            {item.status === 'failed' &&
+              diagnosis?.action === 'updateYtDlp' &&
+              onUpdateYtDlp && (
+                <button
+                  type="button"
+                  onClick={onUpdateYtDlp}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-0.5 text-[0.6875rem] font-medium text-[var(--accent-text)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+                >
+                  <Wrench className="h-3 w-3" strokeWidth={1.75} />
+                  <span>{diagnosis.actionLabel ?? 'Update yt-dlp'}</span>
+                </button>
+              )}
+          </div>
 
           <div className="font-mono-tabular flex shrink-0 items-center gap-2 text-xs text-[var(--text-muted)]">
             <span
@@ -322,6 +412,18 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
           </button>
         )}
 
+        {item.status === 'completed' && item.outputPath && onOpenFile && (
+          <button
+            type="button"
+            onClick={() => onOpenFile(item)}
+            aria-label="Open media file"
+            title="Open media file"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-transparent text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+          >
+            <Play className="h-3.5 w-3.5" strokeWidth={1.75} />
+          </button>
+        )}
+
         {item.status === 'completed' && (
           <button
             type="button"
@@ -333,6 +435,24 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
             <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => void handleCopyUrl()}
+          aria-label={copiedUrl ? 'Copied URL' : 'Copy URL'}
+          title={copiedUrl ? 'Copied URL' : 'Copy URL'}
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-transparent transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer ${
+            copiedUrl
+              ? 'text-[var(--status-ok)] bg-[var(--status-ok)]/10'
+              : 'text-[var(--text-muted)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          {copiedUrl ? (
+            <Check className="h-3.5 w-3.5" strokeWidth={2} />
+          ) : (
+            <Copy className="h-3.5 w-3.5" strokeWidth={1.5} />
+          )}
+        </button>
 
         <button
           type="button"

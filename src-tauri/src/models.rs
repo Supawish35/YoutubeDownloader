@@ -259,6 +259,48 @@ impl Default for FontScale {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FilenameTemplate {
+    TitleId,
+    TitleOnly,
+    ChannelTitle,
+}
+
+impl Default for FilenameTemplate {
+    fn default() -> Self {
+        Self::TitleId
+    }
+}
+
+impl FilenameTemplate {
+    pub fn as_yt_dlp_pattern(&self) -> &'static str {
+        match self {
+            Self::TitleId => "%(title).150B [%(id)s].%(ext)s",
+            Self::TitleOnly => "%(title).150B.%(ext)s",
+            Self::ChannelTitle => "%(uploader)s - %(title).150B.%(ext)s",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistEntry {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+    pub channel: String,
+    pub duration_secs: Option<u64>,
+    pub thumbnail_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistMetadata {
+    pub title: String,
+    pub entries: Vec<PlaylistEntry>,
+}
+
 fn default_show_thumbnails() -> bool {
     true
 }
@@ -301,6 +343,8 @@ pub struct AppSettings {
     pub show_thumbnails: bool,
     #[serde(default)]
     pub cookies_browser: BrowserCookies,
+    #[serde(default)]
+    pub filename_template: FilenameTemplate,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
