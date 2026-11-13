@@ -18,6 +18,7 @@ import {
 import { diagnoseDownloadError } from '@/lib/errorDiagnostics';
 import { getFormatOption, isVideoFormat, supportsCoverArt } from '@/lib/mediaFormats';
 import { detectMediaSource } from '@/lib/mediaSources';
+import { formatDuration } from '@/lib/timeUtils';
 import type { QueueItem } from '~types/downloader';
 
 export interface QueueItemCardProps {
@@ -31,22 +32,10 @@ export interface QueueItemCardProps {
   onOpenCookiesSettings?: () => void;
   onUpdateYtDlp?: () => void;
   onRemove: (jobId: string) => void;
+  onToggleItemFormat?: (jobId: string) => void;
 }
 
-function formatDuration(seconds: number | null): string | null {
-  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return null;
-  const total = Math.floor(seconds);
-  const hrs = Math.floor(total / 3600);
-  const mins = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  if (hrs > 0) {
-    return `${hrs}:${pad(mins)}:${pad(secs)}`;
-  }
-  return `${pad(mins)}:${pad(secs)}`;
-}
-
-export const QueueItemCard: React.FC<QueueItemCardProps> = ({
+const QueueItemCardComponent: React.FC<QueueItemCardProps> = ({
   item,
   showThumbnails = true,
   onStart,
@@ -57,6 +46,7 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
   onOpenCookiesSettings,
   onUpdateYtDlp,
   onRemove,
+  onToggleItemFormat,
 }) => {
   const [thumbFailed, setThumbFailed] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
@@ -193,6 +183,26 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
     return <div className="h-full bg-transparent" style={{ width: '0%' }} />;
   };
 
+  const canToggleFormat =
+    (item.status === 'queued' ||
+      item.status === 'failed' ||
+      item.status === 'cancelled') &&
+    Boolean(onToggleItemFormat);
+
+  const formatBadgeContent = (
+    <>
+      {isVideo ? (
+        <Video className="h-3 w-3 text-[var(--accent-text)]" strokeWidth={1.75} />
+      ) : (
+        <Music className="h-3 w-3 text-[var(--accent-text)]" strokeWidth={1.75} />
+      )}
+      <span>
+        {formatBadge}
+        {isVideo && item.resolution ? ` · ${item.resolution.toUpperCase()}` : ''}
+      </span>
+    </>
+  );
+
   const secondaryDetail =
     item.status === 'failed'
       ? diagnosis?.summary ?? item.error ?? 'Download failed'
@@ -257,17 +267,21 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
             >
               {sourceLabel}
             </span>
-            <span className="font-mono-tabular inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] font-medium text-[var(--text-secondary)]">
-              {isVideo ? (
-                <Video className="h-3 w-3 text-[var(--accent-text)]" strokeWidth={1.75} />
-              ) : (
-                <Music className="h-3 w-3 text-[var(--accent-text)]" strokeWidth={1.75} />
-              )}
-              <span>
-                {formatBadge}
-                {isVideo && item.resolution ? ` · ${item.resolution.toUpperCase()}` : ''}
+            {canToggleFormat && onToggleItemFormat ? (
+              <button
+                type="button"
+                onClick={() => onToggleItemFormat(item.jobId)}
+                title="Click to switch between Audio and Video"
+                aria-label={`Switch format from ${formatBadge} to ${isVideo ? 'Audio' : 'Video'}`}
+                className="font-mono-tabular inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--accent)] hover:text-[var(--accent-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+              >
+                {formatBadgeContent}
+              </button>
+            ) : (
+              <span className="font-mono-tabular inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-1.5 py-0.5 text-[0.6875rem] font-medium text-[var(--text-secondary)]">
+                {formatBadgeContent}
               </span>
-            </span>
+            )}
             {showCoverArtBadge && (
               <span
                 title="Cover art embedded"
@@ -467,5 +481,8 @@ export const QueueItemCard: React.FC<QueueItemCardProps> = ({
     </article>
   );
 };
+
+export const QueueItemCard = React.memo(QueueItemCardComponent);
+QueueItemCard.displayName = 'QueueItemCard';
 
 export default QueueItemCard;

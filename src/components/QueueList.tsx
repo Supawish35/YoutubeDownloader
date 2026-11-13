@@ -1,11 +1,15 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   CheckCheck,
+  ClipboardPaste,
   ListMusic,
+  ListPlus,
   ListVideo,
   Play,
   RotateCcw,
+  Search,
   Trash2,
+  X,
 } from 'lucide-react';
 import { QueueItemCard } from '~components/QueueItemCard';
 import type { QueueFilter, QueueItem } from '~types/downloader';
@@ -26,6 +30,10 @@ export interface QueueListProps {
   onDownloadAllQueued: () => void;
   onClearCompleted: () => void;
   onClearAll: () => void;
+  onToggleItemFormat?: (jobId: string) => void;
+  onPasteAndDownload?: () => void;
+  onOpenBatchPaste?: () => void;
+  onInspectClipboardPlaylist?: () => void;
   binaryReady: boolean;
   showThumbnails?: boolean;
 }
@@ -55,9 +63,33 @@ export const QueueList: React.FC<QueueListProps> = ({
   onDownloadAllQueued,
   onClearCompleted,
   onClearAll,
+  onToggleItemFormat,
+  onPasteAndDownload,
+  onOpenBatchPaste,
+  onInspectClipboardPlaylist,
   binaryReady,
   showThumbnails = true,
 }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === 'f'
+      ) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
   const counts = {
     all: items.length,
     active: items.filter(isItemActive).length,
@@ -73,11 +105,20 @@ export const QueueList: React.FC<QueueListProps> = ({
       item.status === 'converting'
   ).length;
 
+  const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredItems = items.filter((item) => {
-    if (activeFilter === 'active') return isItemActive(item);
-    if (activeFilter === 'completed') return item.status === 'completed';
-    if (activeFilter === 'failed') return isItemFailedOrCancelled(item);
-    return true;
+    if (activeFilter === 'active' && !isItemActive(item)) return false;
+    if (activeFilter === 'completed' && item.status !== 'completed') return false;
+    if (activeFilter === 'failed' && !isItemFailedOrCancelled(item)) return false;
+
+    if (!normalizedQuery) return true;
+    return (
+      (item.metadata?.title?.toLowerCase().includes(normalizedQuery) ?? false) ||
+      (item.metadata?.channel?.toLowerCase().includes(normalizedQuery) ?? false) ||
+      (item.metadata?.source?.toLowerCase().includes(normalizedQuery) ?? false) ||
+      item.url.toLowerCase().includes(normalizedQuery) ||
+      item.format.toLowerCase().includes(normalizedQuery)
+    );
   });
 
   const tabs: { key: QueueFilter; label: string; count: number }[] = [
@@ -136,8 +177,45 @@ export const QueueList: React.FC<QueueListProps> = ({
           })}
         </div>
 
-        {/* Batch Controls & Summary */}
+        {/* Batch Controls, Search & Summary */}
         <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex h-8 w-full items-center rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-2.5 transition-colors duration-150 focus-within:border-[var(--accent)] focus-within:ring-1 focus-within:ring-[var(--accent-subtle)] sm:w-56">
+            <Search
+              className="mr-1.5 h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]"
+              strokeWidth={1.75}
+            />
+            <input
+              ref={searchInputRef}
+              type="text"
+              role="searchbox"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && searchQuery) {
+                  e.preventDefault();
+                  setSearchQuery('');
+                }
+              }}
+              placeholder="Filter queue (Ctrl+F)..."
+              aria-label="Filter queue"
+              className="w-full bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  searchInputRef.current?.focus();
+                }}
+                aria-label="Clear search"
+                title="Clear search"
+                className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+              >
+                <X className="h-3 w-3" strokeWidth={1.75} />
+              </button>
+            )}
+          </div>
+
           {items.length > 0 && (
             <span className="font-mono-tabular mr-1 text-xs text-[var(--text-muted)]">
               {counts.completed}/{items.length}
@@ -202,6 +280,8 @@ export const QueueList: React.FC<QueueListProps> = ({
           <div className="mb-3.5 text-[var(--text-muted)]">
             {items.length === 0 ? (
               <ListMusic className="h-8 w-8 opacity-60" strokeWidth={1.5} />
+            ) : normalizedQuery ? (
+              <Search className="h-8 w-8 opacity-60" strokeWidth={1.5} />
             ) : (
               <ListVideo className="h-8 w-8 opacity-60" strokeWidth={1.5} />
             )}
@@ -210,7 +290,9 @@ export const QueueList: React.FC<QueueListProps> = ({
           <h2 className="text-sm font-medium text-[var(--text-primary)]">
             {items.length === 0
               ? 'Queue is idle'
-              : `No ${activeFilter} downloads`}
+              : normalizedQuery
+                ? 'No matching downloads'
+                : `No ${activeFilter} downloads`}
           </h2>
 
           <p className="mt-1.5 max-w-md text-[0.8125rem] leading-relaxed text-[var(--text-muted)]">
@@ -226,10 +308,82 @@ export const QueueList: React.FC<QueueListProps> = ({
                 </kbd>{' '}
                 to queue.
               </>
+            ) : normalizedQuery ? (
+              `No ${activeFilter === 'all' ? '' : `${activeFilter} `}items match "${searchQuery.trim()}".`
             ) : (
               'Select another filter tab above to view other jobs.'
             )}
           </p>
+
+          {items.length === 0 &&
+            (onPasteAndDownload || onOpenBatchPaste || onInspectClipboardPlaylist) && (
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                {onPasteAndDownload && (
+                  <button
+                    type="button"
+                    onClick={onPasteAndDownload}
+                    disabled={!binaryReady}
+                    title={
+                      binaryReady
+                        ? 'Paste URL from clipboard and start download'
+                        : 'Install yt-dlp first to start downloads'
+                    }
+                    className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--accent)]/45 bg-[var(--accent-subtle)] px-3.5 text-xs font-medium text-[var(--accent-text)] transition-colors duration-150 hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+                  >
+                    <ClipboardPaste className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    <span>Paste &amp; Download</span>
+                  </button>
+                )}
+                {onOpenBatchPaste && (
+                  <button
+                    type="button"
+                    onClick={onOpenBatchPaste}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3.5 text-xs font-medium text-[var(--text-primary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+                  >
+                    <ListPlus className="h-3.5 w-3.5 text-[var(--text-secondary)]" strokeWidth={1.75} />
+                    <span>Batch Paste URLs</span>
+                  </button>
+                )}
+                {onInspectClipboardPlaylist && (
+                  <button
+                    type="button"
+                    onClick={onInspectClipboardPlaylist}
+                    disabled={!binaryReady}
+                    title={
+                      binaryReady
+                        ? 'Inspect playlist URL from clipboard'
+                        : 'Install yt-dlp first to inspect playlists'
+                    }
+                    className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3.5 text-xs font-medium text-[var(--text-primary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+                  >
+                    <ListVideo className="h-3.5 w-3.5 text-[var(--text-secondary)]" strokeWidth={1.75} />
+                    <span>Inspect Playlist</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+          {items.length > 0 && normalizedQuery && (
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 text-xs font-medium text-[var(--text-primary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5 text-[var(--text-muted)]" strokeWidth={1.75} />
+                <span>Clear Search</span>
+              </button>
+              {activeFilter !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => onFilterChange('all')}
+                  className="inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-transparent px-3 text-xs font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+                >
+                  <span>Show All ({counts.all})</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-[var(--border-hairline)]">
@@ -246,6 +400,7 @@ export const QueueList: React.FC<QueueListProps> = ({
               onOpenCookiesSettings={onOpenCookiesSettings}
               onUpdateYtDlp={onUpdateYtDlp}
               onRemove={onRemoveItem}
+              onToggleItemFormat={onToggleItemFormat}
             />
           ))}
         </div>

@@ -91,6 +91,17 @@ The signal accent is controlled via `data-accent` on `<html>` (default: `vermili
   * Primary `Audio | Video` segmented switch in a `1px`-bordered inset rail (`var(--accent)` active fill with `var(--accent-fg)` text).
   * Contextual extension dropdown (`Audio`: `.MP3`, `.OGG`, `.M4A` (`AAC`), `.FLAC`, `.WAV`; `Video`: `.MP4`, `.MKV`, `.WEBM`) preserving each type's last chosen extension independently, with codec/container hints inside a custom Precision popover.
   * When `Video` is active, a paired `Res` Precision dropdown caps video quality (`Best`, `1080p`, `720p`, `480p`). `Cover Art` remains active for supported Audio formats (`MP3`, `OGG`, `AAC`, `FLAC`) and disables gracefully on `Video` and `WAV`.
+* **Visual Clip Scrubber (`ControlPanel` Trim / Subs Drawer):**
+  * Validates `clipStart` / `clipEnd` timestamps via `validateClipRange` (`SS`, `MM:SS`, `HH:MM:SS`) with inline validation errors and submission blocking when out of bounds or inverted.
+  * When preview duration is known, displays dual synchronized start/end range scrubbers (`<input type="range">`), a live `Clip: MM:SS` length badge, and quick-select presets (`First 30s`, `First 1m`, `Full`).
+* **Batch URL Modal (`ControlPanel`):**
+  * Opened from the Row 1 `Batch` button or the Queue empty-state `Batch Paste URLs` action; dismissible via `Esc` or backdrop click.
+  * Monospace `<textarea>` extracts valid `https?://` lines in real time with a live `N valid URLs` badge and `Queue N` / `Download N` actions.
+* **Queue Controls, Persistence & Row Interactions (`QueueList` + `QueueItemCard`):**
+  * **Inline Queue Search (`Ctrl+F` / `Cmd+F`):** Toolbar search input (`Filter queue (Ctrl+F)...`) with clear button filtering by title, channel, source, URL, or format, plus a search-specific empty-filter state.
+  * **Inline Queued Format Toggle:** On `queued`, `failed`, or `cancelled` rows, the format badge renders as an interactive `<button>` (`hover:border-[var(--accent)] hover:text-[var(--accent-text)]`) that flips the job between the user's configured default Audio and Video formats; active/completed rows retain a static `<span>` badge. `QueueItemCard` is wrapped in `React.memo` with stable callbacks so progress updates do not re-render sibling rows.
+  * **Queue Persistence (`ytdl_queue_v2`):** Persists queue items in `localStorage` on structural changes (ignoring transient `percent`/`speed`/`eta` ticks while `downloading`) and normalizes interrupted active jobs (`fetchingMeta`, `downloading`, `converting`) back to `queued` on relaunch.
+  * **Actionable Empty State:** When the queue is empty, displays quick-action buttons (`Paste & Download`, `Batch Paste URLs`, `Inspect Playlist`) beneath the keyboard shortcut hint.
 * **Progress Track:** Horizontal `h-1` bar inside each queue row (`var(--accent)` during download, `var(--status-warn)` during metadata/converting, `var(--status-ok)` on completion, `var(--status-err)` on failure).
 * **Settings Modal (`SettingsModal`, `max-w-2xl`):**
   * Opened via the Header `Settings` icon button or `Ctrl+,` (`Cmd+,` on macOS); `Esc` dismisses.
@@ -102,6 +113,6 @@ The signal accent is controlled via `data-accent` on `<html>` (default: `vermili
 
 ## 7. Layout Principles
 1. **Top Command Bar (`h-13`):** Wordmark + `v2.0.0` tag on left; compact `Updates`, `Settings (Ctrl+,)`, `Theme Toggle`, and `About` icon controls on right.
-2. **Intake & Format Deck:** Full-bleed zone with URL input + `Download` / `Queue` buttons (`h-11`) on row 1, and `Audio | Video` switch + contextual Extension/Resolution Precision popovers + `Cover Art` switch + inline `Dest` directory strip (`h-9`) on row 2.
-3. **Scrollable Queue Workspace (`flex-1 min-h-0`):** Hairline toolbar with filter tabs (`All`, `Active`, `Completed`, `Failed`) and batch actions above a `1px` hairline-divided track list (`QueueItemCard`) showing type icon, extension, and video resolution telemetry, or a quiet typographic empty state.
+2. **Intake & Format Deck:** Full-bleed zone with URL input (`Ctrl+L` / `Cmd+L` to focus & select) + `Download` / `Queue` / `Playlist` / `Batch` buttons (`h-11`) on row 1, `Audio | Video` switch + contextual Extension/Resolution Precision popovers + `Cover Art` switch + `Trim / Subs` drawer (with visual range scrubber) + inline `Dest` directory strip (`h-9`) on row 2, and a `PreviewCard` with an `Inspect Playlist` action for watch URLs carrying `&list=`.
+3. **Scrollable Queue Workspace (`flex-1 min-h-0`):** Hairline toolbar with filter tabs (`All`, `Active`, `Done`, `Failed`), inline queue search (`Ctrl+F`), and batch actions above a `1px` hairline-divided track list (`QueueItemCard`) showing type icon, interactive/static extension badge, and video resolution telemetry, or an actionable empty state (`Paste & Download`, `Batch Paste URLs`, `Inspect Playlist`).
 4. **Bottom Telemetry Bar:** Single source of truth for `yt-dlp` status/version + inline update/install action, `ffmpeg` indicator, `Active X/N` counter, and `Open Folder` shortcut.

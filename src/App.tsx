@@ -1,4 +1,4 @@
-import React, { lazy, useCallback, useEffect, useRef, useState } from 'react';
+import React, { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -100,13 +100,53 @@ function formatErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+const QUEUE_STORAGE_KEY = 'ytdl_queue_v2';
+
+function loadPersistedQueue(): QueueItem[] {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(QUEUE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (item): item is QueueItem =>
+          Boolean(item) &&
+          typeof item === 'object' &&
+          typeof (item as QueueItem).jobId === 'string' &&
+          typeof (item as QueueItem).url === 'string' &&
+          typeof (item as QueueItem).format === 'string'
+      )
+      .map((item) => {
+        if (
+          item.status === 'fetchingMeta' ||
+          item.status === 'downloading' ||
+          item.status === 'converting'
+        ) {
+          return {
+            ...item,
+            status: 'queued' as const,
+            percent: 0,
+            speed: null,
+            eta: null,
+          };
+        }
+        return item;
+      });
+  } catch {
+    return [];
+  }
+}
+
 export const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [binaryStatus, setBinaryStatus] = useState<BinaryStatus | null>(null);
   const [isProvisioningBinaries, setIsProvisioningBinaries] = useState(false);
-  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [queue, setQueue] = useState<QueueItem[]>(() => loadPersistedQueue());
   const [activeFilter, setActiveFilter] = useState<QueueFilter>('all');
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'appearance' | 'downloads'>(
@@ -128,6 +168,32 @@ export const App: React.FC = () => {
   const queueRef = useRef<QueueItem[]>(queue);
   queueRef.current = queue;
   const notifiedCompletedJobsRef = useRef<Set<string>>(new Set());
+
+  const queuePersistenceSnapshot = useMemo(
+    () =>
+      JSON.stringify(
+        queue.map((item) =>
+          item.status === 'downloading'
+            ? {
+                ...item,
+                percent: 0,
+                speed: null,
+                eta: null,
+              }
+            : item
+        )
+      ),
+    [queue]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      window.localStorage.setItem(QUEUE_STORAGE_KEY, queuePersistenceSnapshot);
+    } catch {
+      // Ignore quota or storage restriction errors
+    }
+  }, [queuePersistenceSnapshot]);
 
   const showToast = useCallback(
     (
@@ -637,9 +703,82 @@ export const App: React.FC = () => {
     [enqueueUrl, showToast]
   );
 
+  const handleEnqueueBatchUrls = useCallback(
+    async (
+      urls: string[],
+      mediaType: MediaType,
+      startImmediately: boolean,
+      options?: DownloadItemOptions
+    ) => {
+      if (urls.length === 0) return;
+
+      let enqueuedCount = 0;
+      for (const url of urls) {
+        const ok = await enqueueUrl(url, startImmediately, mediaType, null, options);
+        if (ok) {
+          enqueuedCount += 1;
+        }
+      }
+
+      if (enqueuedCount > 0) {
+        showToast(
+          startImmediately ? 'info' : 'success',
+          startImmediately
+            ? `Started ${enqueuedCount} batch download${enqueuedCount === 1 ? '' : 's'}.`
+            : `Added ${enqueuedCount} URL${enqueuedCount === 1 ? '' : 's'} to queue.`
+        );
+      }
+    },
+    [enqueueUrl, showToast]
+  );
+
+  const handlePasteAndDownloadFromEmpty = useCallback(async () => {
+    if (!binaryStatus?.ytDlpPath) {
+      showToast('warning', 'Install yt-dlp first to start downloads.');
+      return;
+    }
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) {
+      showToast('warning', 'Clipboard access is unavailable.');
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      const trimmed = text.trim();
+      if (!trimmed) {
+        showToast('warning', 'Clipboard is empty. Copy a media URL first.');
+        return;
+      }
+      await enqueueUrl(trimmed, true);
+    } catch (err) {
+      showToast(
+        'error',
+        formatErrorMessage(err, 'Unable to read clipboard. Paste a URL manually.')
+      );
+    }
+  }, [binaryStatus?.ytDlpPath, enqueueUrl, showToast]);
+
+  const handleInspectPlaylistFromEmpty = useCallback(() => {
+    if (!binaryStatus?.ytDlpPath) {
+      showToast('warning', 'Install yt-dlp first to inspect playlists.');
+      return;
+    }
+    const playlistBtn = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Inspect playlist"]'
+    );
+    if (playlistBtn) {
+      playlistBtn.click();
+    } else {
+      showToast('warning', 'Playlist inspector is currently unavailable.');
+    }
+  }, [binaryStatus?.ytDlpPath, showToast]);
+
+  const handleOpenBatchPaste = useCallback(() => {
+    setBatchModalOpen(true);
+  }, []);
+
   const handleStartItem = useCallback(
     async (jobId: string) => {
-      const target = queue.find((item) => item.jobId === jobId);
+      const target = queueRef.current.find((item) => item.jobId === jobId);
       if (!target) return;
 
       notifiedCompletedJobsRef.current.delete(jobId);
@@ -676,7 +815,7 @@ export const App: React.FC = () => {
         showToast('error', message);
       }
     },
-    [queue, showToast]
+    [showToast]
   );
 
   const handleCancelItem = useCallback(
@@ -692,7 +831,7 @@ export const App: React.FC = () => {
 
   const handleRetryItem = useCallback(
     async (jobId: string) => {
-      const target = queue.find((item) => item.jobId === jobId);
+      const target = queueRef.current.find((item) => item.jobId === jobId);
       if (!target) return;
 
       if (!target.metadata) {
@@ -711,7 +850,7 @@ export const App: React.FC = () => {
 
       await handleStartItem(jobId);
     },
-    [handleStartItem, queue]
+    [handleStartItem]
   );
 
   const handleOpenItemFolder = useCallback(
@@ -748,52 +887,49 @@ export const App: React.FC = () => {
   );
 
   const handleRetryAllFailed = useCallback(async () => {
-    const failedItems = queue.filter(
+    const failedItems = queueRef.current.filter(
       (item) => item.status === 'failed' || item.status === 'cancelled'
     );
     for (const item of failedItems) {
       await handleRetryItem(item.jobId);
     }
-  }, [handleRetryItem, queue]);
+  }, [handleRetryItem]);
 
   const handleOpenCookiesSettings = useCallback(() => {
     setSettingsInitialTab('downloads');
     setSettingsOpen(true);
   }, []);
 
-  const handleRemoveItem = useCallback(
-    async (jobId: string) => {
-      const target = queue.find((item) => item.jobId === jobId);
-      if (
-        target &&
-        (target.status === 'fetchingMeta' ||
-          target.status === 'downloading' ||
-          target.status === 'converting')
-      ) {
-        try {
-          await cancelDownload(jobId);
-        } catch {
-          // Proceed with removing from UI even if job already exited
-        }
+  const handleRemoveItem = useCallback(async (jobId: string) => {
+    const target = queueRef.current.find((item) => item.jobId === jobId);
+    if (
+      target &&
+      (target.status === 'fetchingMeta' ||
+        target.status === 'downloading' ||
+        target.status === 'converting')
+    ) {
+      try {
+        await cancelDownload(jobId);
+      } catch {
+        // Proceed with removing from UI even if job already exited
       }
-      setQueue((prev) => prev.filter((item) => item.jobId !== jobId));
-    },
-    [queue]
-  );
+    }
+    setQueue((prev) => prev.filter((item) => item.jobId !== jobId));
+  }, []);
 
   const handleDownloadAllQueued = useCallback(async () => {
-    const queuedItems = queue.filter((item) => item.status === 'queued');
+    const queuedItems = queueRef.current.filter((item) => item.status === 'queued');
     for (const item of queuedItems) {
       await handleStartItem(item.jobId);
     }
-  }, [handleStartItem, queue]);
+  }, [handleStartItem]);
 
   const handleClearCompleted = useCallback(() => {
     setQueue((prev) => prev.filter((item) => item.status !== 'completed'));
   }, []);
 
   const handleClearAll = useCallback(async () => {
-    const activeItems = queue.filter(
+    const activeItems = queueRef.current.filter(
       (item) =>
         item.status === 'fetchingMeta' ||
         item.status === 'downloading' ||
@@ -801,7 +937,39 @@ export const App: React.FC = () => {
     );
     await Promise.allSettled(activeItems.map((item) => cancelDownload(item.jobId)));
     setQueue([]);
-  }, [queue]);
+  }, []);
+
+  const handleToggleItemFormat = useCallback((jobId: string) => {
+    setQueue((prev) =>
+      prev.map((item) => {
+        if (item.jobId !== jobId) return item;
+        if (
+          item.status !== 'queued' &&
+          item.status !== 'failed' &&
+          item.status !== 'cancelled'
+        ) {
+          return item;
+        }
+        const currentSettings = settingsRef.current;
+        if (isVideoFormat(item.format)) {
+          const nextAudioFormat = currentSettings.defaultAudioFormat;
+          return {
+            ...item,
+            format: nextAudioFormat,
+            resolution: undefined,
+            embedThumbnail:
+              currentSettings.embedThumbnail && supportsCoverArt(nextAudioFormat),
+          };
+        }
+        return {
+          ...item,
+          format: currentSettings.defaultVideoFormat,
+          resolution: currentSettings.defaultVideoResolution,
+          embedThumbnail: false,
+        };
+      })
+    );
+  }, []);
 
   const ytDlpReady = Boolean(binaryStatus?.ytDlpPath);
   const ffmpegAvailable = Boolean(binaryStatus?.ffmpegAvailable);
@@ -852,6 +1020,9 @@ export const App: React.FC = () => {
             enqueueUrl(url, false, mediaType, prefetchedMeta, options)
           }
           onEnqueuePlaylistEntries={handleEnqueuePlaylistEntries}
+          batchModalOpen={batchModalOpen}
+          onBatchModalOpenChange={setBatchModalOpen}
+          onEnqueueBatchUrls={handleEnqueueBatchUrls}
           validateUrlFn={validateUrl}
           fetchPreviewFn={fetchVideoInfo}
           fetchPlaylistFn={fetchPlaylistInfo}
@@ -864,18 +1035,22 @@ export const App: React.FC = () => {
             items={queue}
             activeFilter={activeFilter}
             onFilterChange={setActiveFilter}
-            onStartItem={(jobId) => void handleStartItem(jobId)}
-            onCancelItem={(jobId) => void handleCancelItem(jobId)}
-            onRetryItem={(jobId) => void handleRetryItem(jobId)}
-            onOpenItemFolder={(item) => void handleOpenItemFolder(item)}
-            onOpenItemFile={(item) => void handleOpenItemFile(item)}
-            onRetryAllFailed={() => void handleRetryAllFailed()}
+            onStartItem={handleStartItem}
+            onCancelItem={handleCancelItem}
+            onRetryItem={handleRetryItem}
+            onOpenItemFolder={handleOpenItemFolder}
+            onOpenItemFile={handleOpenItemFile}
+            onRetryAllFailed={handleRetryAllFailed}
             onOpenCookiesSettings={handleOpenCookiesSettings}
-            onUpdateYtDlp={() => void handleProvisionOrUpdateBinaries()}
-            onRemoveItem={(jobId) => void handleRemoveItem(jobId)}
-            onDownloadAllQueued={() => void handleDownloadAllQueued()}
+            onUpdateYtDlp={handleProvisionOrUpdateBinaries}
+            onRemoveItem={handleRemoveItem}
+            onDownloadAllQueued={handleDownloadAllQueued}
             onClearCompleted={handleClearCompleted}
-            onClearAll={() => void handleClearAll()}
+            onClearAll={handleClearAll}
+            onToggleItemFormat={handleToggleItemFormat}
+            onPasteAndDownload={handlePasteAndDownloadFromEmpty}
+            onOpenBatchPaste={handleOpenBatchPaste}
+            onInspectClipboardPlaylist={handleInspectPlaylistFromEmpty}
             binaryReady={ytDlpReady}
             showThumbnails={settings.showThumbnails}
           />

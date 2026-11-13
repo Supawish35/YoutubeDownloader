@@ -21,6 +21,7 @@ import {
   VIDEO_FORMAT_OPTIONS,
   VIDEO_RESOLUTION_OPTIONS,
 } from '@/lib/mediaFormats';
+import { formatDuration } from '@/lib/timeUtils';
 import type {
   AudioFormat,
   MediaFormat,
@@ -48,19 +49,6 @@ export interface PlaylistModalProps {
   onEmbedThumbnailChange: (enabled: boolean) => void;
   formatBadge: string;
   onConfirm: (entries: PlaylistEntry[], startImmediately: boolean, modeOverride?: MediaType) => void;
-}
-
-function formatDuration(seconds: number | null): string | null {
-  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return null;
-  const total = Math.floor(seconds);
-  const hrs = Math.floor(total / 3600);
-  const mins = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  if (hrs > 0) {
-    return `${hrs}:${pad(mins)}:${pad(secs)}`;
-  }
-  return `${pad(mins)}:${pad(secs)}`;
 }
 
 function getEntryKey(entry: PlaylistEntry, index: number): string {

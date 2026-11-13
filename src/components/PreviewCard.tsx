@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Music, Video } from 'lucide-react';
+import { ListVideo, Loader2, Music, Video } from 'lucide-react';
+import { formatDuration } from '@/lib/timeUtils';
 import type { MediaType, VideoMetadata } from '~types/downloader';
 
 export interface PreviewCardProps {
@@ -10,19 +11,8 @@ export interface PreviewCardProps {
   formatBadge: string;
   resolutionBadge?: string;
   embedThumbnail?: boolean;
-}
-
-function formatDuration(seconds: number | null): string | null {
-  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return null;
-  const total = Math.floor(seconds);
-  const hrs = Math.floor(total / 3600);
-  const mins = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  if (hrs > 0) {
-    return `${hrs}:${pad(mins)}:${pad(secs)}`;
-  }
-  return `${pad(mins)}:${pad(secs)}`;
+  isPlaylistUrl?: boolean;
+  onInspectPlaylist?: () => void;
 }
 
 export const PreviewCard: React.FC<PreviewCardProps> = ({
@@ -33,6 +23,8 @@ export const PreviewCard: React.FC<PreviewCardProps> = ({
   formatBadge,
   resolutionBadge,
   embedThumbnail = false,
+  isPlaylistUrl = false,
+  onInspectPlaylist,
 }) => {
   const [thumbFailed, setThumbFailed] = useState(false);
 
@@ -124,14 +116,29 @@ export const PreviewCard: React.FC<PreviewCardProps> = ({
         </div>
       </div>
 
-      <span className="font-mono-tabular hidden shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[0.6875rem] font-medium text-[var(--accent-text)] sm:inline-flex">
-        {mode === 'video' ? (
-          <Video className="h-3.5 w-3.5" strokeWidth={1.75} />
-        ) : (
-          <Music className="h-3.5 w-3.5" strokeWidth={1.75} />
+      <div className="flex shrink-0 items-center gap-2">
+        {isPlaylistUrl && onInspectPlaylist && (
+          <button
+            type="button"
+            onClick={onInspectPlaylist}
+            aria-label="Inspect playlist"
+            title="Open playlist inspector"
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--accent)]/40 bg-[var(--accent-subtle)] px-2.5 text-xs font-medium text-[var(--accent-text)] transition-colors duration-150 hover:border-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-fg)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] cursor-pointer"
+          >
+            <ListVideo className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+            <span>Inspect Playlist</span>
+          </button>
         )}
-        <span>{targetSpec}</span>
-      </span>
+
+        <span className="font-mono-tabular hidden shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[0.6875rem] font-medium text-[var(--accent-text)] sm:inline-flex">
+          {mode === 'video' ? (
+            <Video className="h-3.5 w-3.5" strokeWidth={1.75} />
+          ) : (
+            <Music className="h-3.5 w-3.5" strokeWidth={1.75} />
+          )}
+          <span>{targetSpec}</span>
+        </span>
+      </div>
     </div>
   );
 };
